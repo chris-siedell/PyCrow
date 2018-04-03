@@ -2,4 +2,11 @@
 *.swp
 .DS_Store
 *~
+*.binary
+
+*/__pycache__/
+
+*.pyc
+/dist/
+/*.egg-info
 

@@ -1,27 +1,84 @@
+# Crow Host (v1 standard)
+# 3 April 2018
+# Chris Siedell
+# http://www.siedell.com/projects/Crow/
 
-import random
+
+import time
+import serial
+import crow.parser
 
 
+class CrowHost:
 
-def createCommand(address=1, port=0, isUser=True, muteResponse=False, payload=None, token=None, propcrOrder=False):
+    def __init__(self):
 
-    _token = random.randint(0, 255)
+        self.serial = None
+        self.timeout = 0.25
 
-    if address < 1 or address > 31:
-        raise ValueError('address must be 1 to 31')
+        self._next_token = 2
+
+        self._parser = crow.parser.Parser()
+
+
+    def send_command(self, address=1, port=0, is_user=True, payload=None, response_required=True, propcr_order=False):
+
+        if self.serial is None:
+            raise RuntimeError("send_command requires serial to be defined")
+        
+        self.serial.reset_input_buffer()
+
+        token = self._next_token
+        self._next_token = (self._next_token + 1)%256
+
+        packet = make_command_packet(address, port, is_user, not response_required, payload, token, propcr_order)
+        
+        self.serial.write(packet)
+
+        if not response_required:
+            return {}
+
+        results = []
+        self._parser.reset()
+
+        # the time limit is <time start receiving> + <timeout> + <time necessary to transmit expected data at baudrate>
+        seconds_per_byte = 10 / self.serial.baudrate
+        
+        time_limit = time.process_time() + self.timeout + seconds_per_byte*self._parser.min_bytes_expected
+        now = time.process_time()
+        
+        while self._parser.min_bytes_expected > 0 and now < time_limit:
+            
+            self.serial.timeout = time_limit - now 
+            data = self.serial.read(self._parser.min_bytes_expected)
+            results += self._parser.parse_data(data)
+            
+            time_limit += seconds_per_byte*self._parser.min_bytes_expected
+            now = time.process_time()
+
+        # convert responses with incorrect tokens into errors
+        for item in results:
+            if item['type'] == 'response':
+                if item['token'] != token:
+                    item['type'] = 'error'
+                    item['message'] = 'response received with incorrect token -- possibly a late or stale response'
+
+        return results
+
+
+def make_command_packet(address=1, port=0, is_user=True, mute_response=False, payload=None, token=0, propcr_order=False):
+
+    if address < 0 or address > 31:
+        raise ValueError('address must be 0 to 31')
 
     if port < 0 or port > 65535:
         raise ValueError('port must be a two-byte value (0 to 65535)')
 
-    if address == 0 and not muteResponse:
-        raise ValueError('broadcast commands (address 0) must have muteResponse=True')
+    if address == 0 and not mute_response:
+        raise ValueError('broadcast commands (address 0) must not expect a response')
 
-    if token is None:
-        token = _token
-        _token = (_token + 1)%256
-    else:
-        if token < 0 or token > 255:
-            raise ValueError('token must be a one-byte value (0 to 255)')
+    if token < 0 or token > 255:
+        raise ValueError('token must be a one-byte value (0 to 255)')
 
     # begin with a packet bytearray of the required length
     if payload is not None:
@@ -68,7 +125,7 @@ def createCommand(address=1, port=0, isUser=True, muteResponse=False, payload=No
     # CH0, CH1
     s = paySize.to_bytes(2, 'big')
     ch0 = 0x40 | s[0]
-    if isUser:
+    if is_user:
         ch0 |= 0x10
     packet[0] = ch0
     packet[1] = s[1]
@@ -78,7 +135,7 @@ def createCommand(address=1, port=0, isUser=True, muteResponse=False, payload=No
 
     # CH3
     ch3 = address
-    if muteResponse:
+    if mute_response:
         ch3 |= 0x40
     if port > 0:
         ch3 |= 0x80
@@ -92,13 +149,13 @@ def createCommand(address=1, port=0, isUser=True, muteResponse=False, payload=No
     packet[3] = ch3
 
     # CH6, CH7 
-    check = fletcher16Checkbytes(packet[0:pktInd])
+    check = fletcher16_checkbytes(packet[0:pktInd])
     packet[pktInd] = check[0]
     packet[pktInd+1] = check[1]
     pktInd += 2
 
     # send the payload in chunks with up to 128 payload bytes followed by 2 F16 check bytes
-    if propcrOrder:
+    if propcr_order:
         # PropCR uses non-standard payload byte ordering (for command payloads only)
         payRem = paySize
         payInd = 0
@@ -116,7 +173,7 @@ def createCommand(address=1, port=0, isUser=True, muteResponse=False, payload=No
                 pktInd += groupSize
                 payInd += groupSize
             
-            check = fletcher16Checkbytes(packet[startPktIndex:pktInd])
+            check = fletcher16_checkbytes(packet[startPktIndex:pktInd])
             packet[pktInd] = check[0]
             packet[pktInd+1] = check[1]
             pktInd += 2
@@ -130,7 +187,7 @@ def createCommand(address=1, port=0, isUser=True, muteResponse=False, payload=No
             nextPayInd = payInd + chunkSize
             packet[pktInd:pktInd+chunkSize] = payload[payInd:nextPayInd]
             pktInd += chunkSize
-            check = fletcher16Checkbytes(payload[payInd:nextPayInd])
+            check = fletcher16_checkbytes(payload[payInd:nextPayInd])
             packet[pktInd] = check[0]
             packet[pktInd+1] = check[1]
             pktInd += 2
@@ -152,7 +209,7 @@ def fletcher16(data):
     return bytes([upper, lower])
 
 
-def fletcher16Checkbytes(data):
+def fletcher16_checkbytes(data):
     # adapted from PropCRInternal.cpp (2 April 2018)
     # overflow not a problem if called on short chunks of data (128 bytes or less)
     lower = 0
