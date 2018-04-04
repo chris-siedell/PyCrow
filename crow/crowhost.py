@@ -44,8 +44,8 @@ class CrowHost:
         # the time limit is <time start receiving> + <timeout> + <time necessary to transmit expected data at baudrate>
         seconds_per_byte = 10 / self.serial.baudrate
         
-        time_limit = time.process_time() + self.timeout + seconds_per_byte*self._parser.min_bytes_expected
-        now = time.process_time()
+        now = time.perf_counter()
+        time_limit = now + self.timeout + seconds_per_byte*self._parser.min_bytes_expected
         
         while self._parser.min_bytes_expected > 0 and now < time_limit:
             
@@ -53,8 +53,8 @@ class CrowHost:
             data = self.serial.read(self._parser.min_bytes_expected)
             results += self._parser.parse_data(data)
             
-            time_limit += seconds_per_byte*self._parser.min_bytes_expected
-            now = time.process_time()
+            time_limit += seconds_per_byte*len(data)
+            now = time.perf_counter()
 
         # convert responses with incorrect tokens into errors
         for item in results:
