@@ -11,12 +11,9 @@ class Parser:
         # Minimum number of bytes still expected by parser to complete the transaction.
         self.min_bytes_expected = 0
 
-        # Indicates if a final response has been received.
-        self.final_received = False
-
         # internal stuff
-        self._is_final = True
         self._payload_size = 0
+        self._is_error = False
         self._token = 0
         self._payload = bytearray(2047)
         self._state = 0
@@ -30,19 +27,20 @@ class Parser:
 
     def reset(self):
         self._state = 0
-        self.final_received = False
         self.min_bytes_expected = 5
 
     def parse_data(self, data, reset=False):
 
         # returns list of dictionaries which all have a type property:
-        #  type: 'error', 'extra', or 'response'
+        #  type: 'error' - for parsing errors
+        #        'extra' - extraneous data
+        #        'response' - a correctly formatted response
         # error properties:
         #  message (string)
         # extra properties:
         #  data (bytearray)
         # response properties:
-        #  is_final (bool)
+        #  is_error (bool)
         #  token (int)
         #  payload (bytearray)
 
@@ -99,12 +97,8 @@ class Parser:
                     # lower F16 correct
                     if self._payloadRemaining == 0:
                         # packet done -- all bytes received
-                        result.append({'type':'response', 'is_final':self._is_final, 'token':self._token, 'payload':self._payload[0:self._payloadSize]})
-                        if self._is_final:
-                            self.min_bytes_expected = 0
-                            self.final_received = True
-                        else:
-                            self.min_bytes_expected = 5
+                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'payload':self._payload[0:self._payload_size]})
+                        self.min_bytes_expected = 0
                         self._state = 0
                     else:
                         # more payload bytes will arrive in another chunk
@@ -146,27 +140,23 @@ class Parser:
                         result.append({'type':'extra', 'data':extra_data})
                         extra_data = bytearray()
                     # extract packet parameters
-                    self._is_final = bool(self._header[0] & 0x10)
-                    self._header[0] &= 0x03
-                    self._payloadSize = int.from_bytes(self._header[0:2], 'big')
+                    self._is_error = bool(self._header[0] & 0x80)
+                    self._header[0] = (self._header[0] & 0x38) >> 3
+                    self._payload_size = int.from_bytes(self._header[0:2], 'big')
                     self._token = self._header[2]
-                    if self._payloadSize > 0:
+                    if self._payload_size > 0:
                         # prepare for first chunk of payload
-                        remainder = self._payloadSize%128
-                        self.min_bytes_expected = (self._payloadSize//128)*130 + ((remainder + 2) if (remainder > 0) else 0)
-                        self._chunkRemaining = min(self._payloadSize, 128)
-                        self._payloadRemaining = self._payloadSize - self._chunkRemaining
+                        remainder = self._payload_size%128
+                        self.min_bytes_expected = (self._payload_size//128)*130 + ((remainder + 2) if (remainder > 0) else 0)
+                        self._chunkRemaining = min(self._payload_size, 128)
+                        self._payloadRemaining = self._payload_size - self._chunkRemaining
                         self._upperF16 = self._lowerF16 = 0
                         self._payloadIndex = 0
                         self._state = 5
                     else:
                         # packet is good, but empty (no payload)
-                        result.append({'type':'response', 'is_final':self._is_final, 'token':self._token, 'payload':bytearray()})
-                        if self._is_final:
-                            self.min_bytes_expected = 0
-                            self.final_received = True
-                        else:
-                            self.min_bytes_expected = 5
+                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'payload':bytearray()})
+                        self.min_bytes_expected = 0
                         self._state = 0
                 else:
                     # bad header
@@ -179,11 +169,7 @@ class Parser:
                 self.min_bytes_expected -= 1
                 if self.min_bytes_expected == 0:
                     result.append({'type':'error', 'message':'response packet had bad checksums'})
-                    if self._is_final:
-                        self.min_bytes_expected = 0
-                        self.final_received = True
-                    else:
-                        self.min_bytes_expected = 5
+                    self.min_bytes_expected = 0
                     self._state == 0
             else:
                 raise Exception("invalid state in ResponseParser")
@@ -196,27 +182,7 @@ class Parser:
 
 def response_header_is_valid(header):
     # Given a bytes-like object of len >= 5 this method returns a bool.
-    # From "Crow Specification v1.txt":
-    #   
-    #   A response header is always 5 bytes and has the following format:
-    #   
-    #                   |7|6|5|4|3|2|1|0|
-    #             ------|---------------|
-    #              RH0  |1|0|0|F|0| Lu  |
-    #              RH1  |      Ll       |
-    #              RH2  |       K       |
-    #              RH3  |      Fu       |
-    #              RH4  |      Fl       |
-    #   
-    #   The fields have the following definitions:
-    #   
-    #       L = Lu << 8 | Ll = payload length (0-2047 bytes, exclusive of error detection bytes)
-    #       F = final flag: 0 - intermediate response
-    #                       1 - final response
-    #       K = token, the same value that was sent by the host with the command
-    #       Fu, Fl - The Fletcher 16 checksum after being initialized to zero and processing
-    #                bytes RH0-RH2. Fu is the upper sum, and Fl is the lower sum.
-    if header[0] & 0xE8 != 0x80:
+    if header[0] & 0x47 != 0x02:
         # bad reserved bits in RH0
         return False
     upper = lower = header[0]
@@ -231,3 +197,4 @@ def response_header_is_valid(header):
         # bad lower F16 checksum
         return False
     return True
+
