@@ -1,7 +1,7 @@
-# Crow Response Parser
-# 3 April 2018
+# Crow v2 Response Parser
+# April 2018 - in active development
 # Chris Siedell
-# http://www.siedell.com/projects/Crow/
+# http://siedell.com/projects/Crow/
 
 
 class Parser:
@@ -9,7 +9,7 @@ class Parser:
     def __init__(self):
 
         # Minimum number of bytes still expected by parser to complete the transaction.
-        self.min_bytes_expected = 0
+        self.min_bytes_expected = 5
 
         # internal stuff
         self._payload_size = 0
@@ -29,20 +29,30 @@ class Parser:
         self._state = 0
         self.min_bytes_expected = 5
 
-    def parse_data(self, data, reset=False):
+    def parse_data(self, data, token=None, reset=False):
+
+        # The token argument can be used to inform the parser that it should
+        # look for a specific response. If token is defined then the parser will
+        # return as soon as it receives a response with that token. It will set
+        # min_bytes_expected to 0, and if there are any bytes in data after the
+        # response they will be returned as 'leftover' bytes. 
 
         # returns list of dictionaries which all have a type property:
-        #  type: 'error' - for parsing errors
+        #  type: 'error' - a response packet was received, but it could not be parsed
         #        'extra' - extraneous data
         #        'response' - a correctly formatted response
+        #        'leftover' - data following an expected (specific token) response
         # error properties:
+        #  token (int)
         #  message (string)
         # extra properties:
-        #  data (bytearray)
+        #  data (bytes)
+        # leftover properties:
+        #  data (bytes)
         # response properties:
         #  is_error (bool)
         #  token (int)
-        #  payload (bytearray)
+        #  payload (bytes)
 
         # states (action to be performed on next byte):
         #  0 - buffer RH0
@@ -98,8 +108,13 @@ class Parser:
                     if self._payloadRemaining == 0:
                         # packet done -- all bytes received
                         result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'payload':self._payload[0:self._payload_size]})
-                        self.min_bytes_expected = 0
+                        self.min_bytes_expected = 5
                         self._state = 0
+                        if token is not None and token == self._token:
+                            if dataInd < dataSize:
+                                result.append({'type':'leftover', 'data':data[dataInd:dataSize]})
+                            self.min_bytes_expected = 0
+                            return result
                     else:
                         # more payload bytes will arrive in another chunk
                         self._chunkRemaining = min(self._payloadRemaining, 128)
@@ -131,7 +146,6 @@ class Parser:
                 self._state = 4
             elif self._state == 4:
                 # buffer RH4 and evaulate
-                self.min_bytes_expected = 0
                 self._header[4] = byte
                 if response_header_is_valid(self._header):
                     # valid header
@@ -156,8 +170,13 @@ class Parser:
                     else:
                         # packet is good, but empty (no payload)
                         result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'payload':bytearray()})
-                        self.min_bytes_expected = 0
+                        self.min_bytes_expected = 5
                         self._state = 0
+                        if token is not None and token == self._token:
+                            if dataInd < dataSize:
+                                result.append({'type':'leftover', 'data':data[dataInd:dataSize]})
+                            self.min_bytes_expected = 0
+                            return result
                 else:
                     # bad header
                     # stay at state 4 but shift header bytes down and collect extraneous data
@@ -168,11 +187,16 @@ class Parser:
                 # process body byte after failed payload F16
                 self.min_bytes_expected -= 1
                 if self.min_bytes_expected == 0:
-                    result.append({'type':'error', 'message':'response packet had bad checksums'})
-                    self.min_bytes_expected = 0
+                    result.append({'type':'error', 'token':self._token, 'message':'The response packet has bad checksums.'})
+                    self.min_bytes_expected = 5
                     self._state == 0
+                    if token is not None and token == self._token:
+                        if dataInd < dataSize:
+                            result.append({'type':'leftover', 'data':data[dataInd:dataSize]})
+                        self.min_bytes_expected = 0
+                        return result
             else:
-                raise Exception("invalid state in ResponseParser")
+                raise RuntimeError("Invalid state in Parser.")
 
         if len(extra_data) > 0:
             result.append({'type':'extra', 'data':extra_data})
