@@ -12,6 +12,7 @@ import serial
 import sys
 from crow import host
 import crow.errors
+from crow.admin import CrowAdmin
 
 if len(sys.argv) < 2:
     sys.exit("Please provide serial port name as command line argument.")
@@ -24,13 +25,47 @@ host.serial = s
 
 print("\nCrow Host v2 Demonstration")
 
+a = CrowAdmin()
+a.host = host
+a.address = 5
+a.propcr_order = True
+
 # ping
-print("\nWill ping address 5...")
-start = time.perf_counter()
-payload = host.send_command(address=5, port=0)
-end = time.perf_counter()
-print("payload: " + str(payload))
-print("time: " + str(end-start))
+print("\nSending ping command...")
+t = a.ping()
+print("time: " + str(t))
+
+# echo
+print("\nSending echo command with no data...")
+a.echo(b'')
+
+# echo
+print("\nSending echo command with data='echo echo echo'...")
+a.echo(b'echo echo echo')
+
+# hostPresence
+print("\nSending hostPresence with data=0x555555 (will sleep 100ms afterwards)...")
+a.host_presence(b'\x55\x55\x55')
+time.sleep(0.1)
+
+# getDeviceInfo
+print("\nSending get_device_info command...")
+info = a.get_device_info()
+print("device_info: " + str(info))
+
+#print("type: "+str(type(ports[0])))
+# getOpenPorts
+print("\nSending getOpenPorts command...")
+ports = a.get_open_ports()
+print("ports: " + str(ports))
+
+# getPortInfo
+print("\nWill send getPortInfo command for above ports, plus port 7...")
+for p in ports:
+    info = a.get_port_info(p)
+    print("port " + str(p) + ": " + str(info))
+info = a.get_port_info(7)
+print("port 7: " + str(info))
 
 # echo
 print("\nWill send 0xdeadbeefabcdef01 to an echo server at address 5, port 100...")
@@ -97,13 +132,13 @@ except crow.errors.PortNotOpenError as e:
 
 # admin echo
 print("\nWill send echo() admin command...")
-echo = b'\x53\x41\x00Hello there! echo echo echo'
+echo = b'\x43\x41\x00Hello there! echo echo echo'
 payload = host.send_command(address=5, payload=echo, port=0, propcr_order=True)
 print("payload: " + str(payload))
 
 # admin getDeviceInfo
 print("\nWill send getDeviceInfo() admin command...")
-getDeviceInfo = b'\x53\x41\x01'
+getDeviceInfo = b'\x43\x41\x01'
 payload = host.send_command(address=5, payload=getDeviceInfo, port=0, propcr_order=True)
 print("payload: " + str(payload))
 

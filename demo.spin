@@ -17,8 +17,11 @@ obj
 
 pub main
 
-    echo.setParams(31, 30, 115200, 5, 100)
-    echo.Start(0)
+    echo.setPins(31, 30)
+    echo.setBaudrate(115200)
+    echo.setAddress(5)
+    echo.setUserPort(100)
+    echo.start
     
     'peekpoke.setParams(31, 30, 230400, 6)
     'peekpoke.new
