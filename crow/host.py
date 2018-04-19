@@ -1,7 +1,7 @@
 # Crow v2 Host
 # April 2018 - in active development
 # Chris Siedell
-# http://siedell.com/projects/Crow/
+# https://github.com/chris-siedell/PyCrow
 
 
 import time
@@ -76,121 +76,164 @@ class Host:
                 elif item['type'] == 'error':
                     if item['token'] == token:
                         # A packet was received with the correct token, but it could not be parsed.
-                        raise crow.errors.NoResponseError(address, port, item['message'])
+                        raise crow.errors.NoResponseError(address, port, byte_count, item['message'])
             raise RuntimeError("Program logic error. Expected to find a response with the correct token in parser results, but none was found.")
         else:
             # Failed to receive a response with the expected token.
             if byte_count == 0:
-                raise crow.errors.NoResponseError(address, port, "Timeout occurred with no data received.")
+                raise crow.errors.NoResponseError(address, port, byte_count)
             for item in results:
                 if item['type'] == 'response':
                     if item['token'] != token:
-                        raise crow.errors.NoResponseError(address, port, "A response was received, but with an incorrect identifying token. It may be a stale response, or the responding device may be misconfigured.")
+                        raise crow.errors.NoResponseError(address, port, byte_count, "An invalid response was received (incorrect token). It may be a stale response, or the responding device may be misconfigured.")
                     else:
-                        raise RuntimeError("Program logic error. Did not expect to find a response with the correct token in the parser results at this point.")
-            raise crow.errors.NoResponseError(address, port, "Received " + str(byte_count) + " bytes, but could not parse a valid response.")
+                        raise RuntimeError("Program logic error. Should not have a response with the correct token in the parser results at this point.")
+            raise crow.errors.NoResponseError(address, port, byte_count)
 
 
     def _handle_error_response(self, payload, address, port):
 
-        # If the error response payload is empty we use UnspecifiedError by default.
+        # If the error response payload is empty we raise UnspecifiedDeviceError.
         if len(payload) == 0:
-            raise UnspecifiedError(address, port, {}, False)
+            raise UnspecifiedDeviceError()
 
-        # The error type is in the bottom five bits of the first byte.
-        number = payload[0] & 0x1f
 
-        # details will hold any additional details included in the response.
+        # The error number is in the first byte of the payload.
+        number = payload[0]
+
+        # rsp_name is used if there is an error parsing the error response
+        rsp_name = "error number " + str(number)
+
+        # details will hold any additional details included in the error
         details = {}
-
-        # This flag is set if the payload is not large enough for the details
-        #  it claims to include.
-        too_short = False
 
         # Optional byte E1 is a bitfield that specifies what additional details are included.
         if len(payload) >= 2:
-            pay_ind = 2
-            pay_rem = len(payload) - 2
+         
             E1 = payload[1]
+
+            # params holds the argument parsing parameters
+            #  ind - index of next argument byte
+            #  rem - remaining number of bytes available in payload
+            params = {'ind': 2, 'rem': len(payload) - 2}
+
             if E1 & 1:
-                # crow_version
-                if pay_rem >= 1:
-                    details['crow_version'] = payload[pay_ind]
-                    pay_ind += 1
-                    pay_rem -= 1
-                else:
-                    too_short = True
+                # message (message_ascii_str)
+                extract_ascii(details, response, params, 4, 'message', rsp_name)
+
             if E1 & 2:
-                # address
-                if pay_rem >= 1:
-                    details['address'] = payload[pay_ind]
-                    pay_ind += 1
-                    pay_rem -= 1
-                else:
-                    too_short = True
+                # crow_version
+                extract_int(details, response, params, 1, 'crow_version', rsp_name)
+
             if E1 & 4:
-                # port
-                if pay_rem >= 1:
-                    details['port'] = payload[pay_ind]
-                    pay_ind += 1
-                    pay_rem -= 1
-                else:
-                    too_short = True
-            if E1 & 8:
                 # max_command_size
-                if pay_rem >= 2:
-                    details['max_command_size'] = int.from_bytes(payload[pay_ind:pay_ind+2], 'big')
-                    pay_ind += 2
-                    pay_rem -= 2
-                else:
-                    too_short = True
-            if E1 & 16:
+                extract_int(details, response, params, 2, 'max_command_size', rsp_name)
+
+            if E1 & 8:
                 # max_response_size
-                if pay_rem >= 2:
-                    details['max_response_size'] = int.from_bytes(payload[pay_ind:pay_ind+2], 'big')
-                    pay_ind += 2
-                    pay_rem -= 2
-                else:
-                    too_short = True
+                extract_int(details, response, params, 2, 'max_response_size', rsp_name)
+
+            if E1 & 16:
+                # address
+                extract_int(details, response, params, 1, 'address', rsp_name)
+
             if E1 & 32:
-                # ascii_message
-                if pay_rem >= 4:
-                    ascii_offset = int.from_bytes(payload[pay_ind:pay_ind+2], 'big')
-                    ascii_length = int.from_bytes(payload[pay_ind+2:pay_ind+4], 'big')
-                    pay_ind += 4
-                    pay_rem -= 4
-                    if ascii_offset + ascii_length <= len(payload):
-                        details['ascii_message'] = payload[ascii_offset:ascii_offset+ascii_length].decode(encoding='ascii', errors='replace')
-                    else:
-                        too_short = True
-                else:
-                    too_short = True
+                # port
+                extract_int(details, response, params, 1, 'port', rsp_name)
+
+            if E1 & 64:
+                # service_identifier
+                extract_ascii(details, response, params, 3, 'service_identifier', rsp_name)
 
         if number == 0:
-            raise crow.errors.UnspecifiedError(address, port, details, too_short)
+            raise crow.errors.UnspecifiedDeviceError(address, port, details)
         elif number == 1:
-            raise crow.errors.DeviceUnavailableError(address, port, details, too_short)
+            raise crow.errors.DeviceFaultError(address, port, details)
         elif number == 2:
-            raise crow.errors.DeviceIsBusyError(address, port, details, too_short)
+            raise crow.errors.ServiceFaultError(address, port, details)
         elif number == 3:
-            raise crow.errors.CommandTooLargeError(address, port, details, too_short)
+            raise crow.errors.DeviceUnavailableError(address, port, details)
         elif number == 4:
-            raise crow.errors.CorruptPayloadError(address, port, details, too_short)
+            raise crow.errors.DeviceIsBusyError(address, port, details)
         elif number == 5:
-            raise crow.errors.PortNotOpenError(address, port, details, too_short)
+            raise crow.errors.OversizedCommandError(address, port, details)
         elif number == 6:
-            raise crow.errors.LowResourcesError(address, port, details, too_short)
+            raise crow.errors.CorruptCommandPayloadError(address, port, details)
         elif number == 7:
-            raise crow.errors.UnknownProtocolError(address, port, details, too_short)
+            raise crow.errors.PortNotOpenError(address, port, details)
         elif number == 8:
-            raise crow.errors.RequestTooLargeError(address, port, details, too_short)
-        elif number == 9:
-            raise crow.errors.ImplementationFaultError(address, port, details, too_short)
-        elif number == 10:
-            raise crow.errors.ServiceFaultError(address, port, details, too_short)
+            raise crow.errors.DeviceLowResourcesError(address, port, details)
+        elif number >= 9 and number < 32:
+            raise crow.errors.UnknownDeviceError(number, address, port, details)
+        elif number >= 32 and number < 64:
+            raise crow.errors.DeviceError(number, address, port, details)
+        elif number == 64:
+            raise crow.errors.UnspecifiedServiceError(address, port, details)
+        elif number == 65:
+            raise crow.errors.UnknownCommandFormatError(address, port, details)
+        elif number == 66:
+            raise crow.errors.RequestTooLargeError(address, port, details)
+        elif number == 67:
+            raise crow.errors.ServiceLowResourcesError(address, port, details)
+        elif number == 68:
+            raise crow.errors.CommandNotAvailableError(address, port, details)
+        elif number == 69:
+            raise crow.errors.CommandNotImplementedError(address, port, details)
+        elif number == 70:
+            raise crow.errors.CommandNotAllowedError(address, port, details)
+        elif number == 71:
+            raise crow.errors.InvalidCommandError(address, port, details)
+        elif number == 72:
+            raise crow.errors.IncorrectCommandSizeError(address, port, details)
+        elif number == 73:
+            raise crow.errors.MissingCommandDataError(address, port, details)
+        elif number == 74:
+            raise crow.errors.TooMuchCommandDataError(address, port, details)
+        elif number >= 75 and number < 128:
+            raise crow.errors.UnknownServiceError(number, address, port, details)
+        elif number >= 128 and number < 255:
+            raise crow.errors.ServiceError(number, address, port, details)
         else:
-            raise crow.errors.UnknownError(address, port, details, too_short, number)
-    
+            raise RuntimeError("An error number was not correctly handled. Number: " + str(number) + ".")
+
+
+def extract_int(info, response, params, num_bytes, prop_name, rsp_name, byteorder='big', signed=False):
+    # info - the dict to put the property in
+    # response - the buffer containing the response
+    # params - parsing parameters dict, should have ind (index) and rem (remaining) keys, where ind+rem <= len(response)
+    # num_bytes - the number of bytes in the integer (big-endian assumed)
+    # prop_name - the name of the property, used for populating info and for composing error messages
+    # rsp_name - the name of the response, used for composing error messages
+    if params['rem'] < num_bytes:
+        raise HostError("The " + rsp_name + " response does not have enough bytes remaining for " + prop_name + ".")
+    info[prop_name] = int.from_bytes(response[params['ind']:params['ind']+num_bytes], byteorder=byteorder, signed=signed)
+    params['ind'] += num_bytes
+    params['rem'] -= num_bytes
+
+
+def extract_ascii(info, response, params, num_arg_bytes, prop_name, rsp_name):
+    # info - the dict to put the property in
+    # response - the buffer containing the response
+    # params - parsing parameters dict, should have ind (index) and rem (remaining) keys, where ind+rem <= len(response)
+    # num_arg_bytes - the number of argument bytes (will either be 3 or 4; always 2 bytes for offset, followed by 1 or 2 bytes for length)
+    # prop_name - the name of the property, used for populating info and for composing error messages
+    # rsp_name - the name of the response, used for composing error messages
+    if params['rem'] < num_arg_bytes:
+        raise HostError("The " + rsp_name + " response does not have enough bytes remaining for " + prop_name + ".")
+    ind = params['ind']
+    offset = int.from_bytes(response[ind:ind+2], 'big')
+    if num_arg_bytes == 3:
+        length = response[ind+2]
+    elif num_arg_bytes == 4:
+        length = int.from_bytes(response[ind+2:ind+4], 'big')
+    else:
+        raise RuntimeError("Programming error -- num_arg_bytes should always be 3 or 4.")
+    params['ind'] += num_arg_bytes
+    params['rem'] -= num_arg_bytes
+    if offset + length > len(response):
+        raise HostError(prop_name + " exceeds the bounds of the " + rsp_name + " response.")
+    info[prop_name] = response[offset:offset+length].decode(encoding='ascii', errors='replace')
+
 
 def make_command_packet(address, port, response_expected, payload=None, token=0, propcr_order=False):
 

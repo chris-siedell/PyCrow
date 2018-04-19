@@ -1,6 +1,8 @@
 
 import time
 
+# todo: convert CrowAdminErrors to ClientErrors
+
 class CrowAdminError(RuntimeError):
     pass
 
@@ -27,11 +29,11 @@ class CrowAdmin():
         # by a verbatim echo of the data.
         expected_len = len(data) + 3
         if len(response) < expected_len:
-            raise CrowAdminError("The echo response has too few bytes.")
+            raise crow.errors.InvalidResponseError("The echo response has too few bytes.")
         elif len(response) > expected_len:
-            raise CrowAdminError("The echo response has too many bytes.")
+            raise crow.errors.InvalidResponseError("The echo response has too many bytes.")
         if response[3:] != data:
-            raise CrowAdminError("The echo response has incorrect bytes.")
+            raise crow.errors.InvalidResponseError("The echo response has incorrect bytes.")
 
 
     def host_presence(self, filler):
@@ -53,19 +55,23 @@ class CrowAdmin():
 
     def get_device_info(self):
         response = self._send_command(code=1)
-        if len(response) < 9:
-            raise CrowAdminError("The get_device_info response has less than nine bytes.")
+        if len(response) < 8:
+            raise CrowAdminError("The get_device_info response has less than eight bytes.")
         info = {}
         info['crow_version'] = response[3]
         info['max_command_payload_size'] = int.from_bytes(response[4:6], 'big')
         info['max_response_payload_size'] = int.from_bytes(response[6:8], 'big')
+        if len(response) == 8:
+            return info
         details = response[8]
         params = {'ind': 9, 'rem': len(response) - 9}
         if details & 1:
-            self._extract_ascii(info, response, params, 'implementation_description', 'get_device_info')
+            self._extract_ascii(info, response, params, 'impl_identifier', 'get_device_info')
         if details & 2:
-            self._extract_ascii(info, response, params, 'device_identifier', 'get_device_info')
+            self._extract_ascii(info, response, params, 'impl_description', 'get_device_info')
         if details & 4:
+            self._extract_ascii(info, response, params, 'device_identifier', 'get_device_info')
+        if details & 8:
             self._extract_ascii(info, response, params, 'device_description', 'get_device_info')
         return info
 
@@ -73,8 +79,10 @@ class CrowAdmin():
         response = self._send_command(code=2)
         if len(response) < 4:
             raise CrowAdminError("The get_open_ports response has less than four bytes.")
+        if response[3] == 0x01:
+            raise RuntimeError("The bitfield option for get_open_ports is not implemented.") # todo: fix
         if response[3] != 0:
-            raise CrowAdminError("Unknown format for get_open_ports response.")
+            raise CrowAdminError("Invalid format for get_open_ports response.")
         ports = []
         for p in response[4:]:
             ports.append(p)
@@ -92,14 +100,16 @@ class CrowAdmin():
         info['is_open'] = bool(details & 1)
         params = {'ind': 4, 'rem': len(response) - 4}
         if details & 2:
-            self._extract_ascii(info, response, params, 'protocol_identifier', 'get_port_info')
+            self._extract_ascii(info, response, params, 'service_identifier', 'get_port_info')
+        if details & 4:
+            self._extract_ascii(info, response, params, 'service_description', 'get_port_info')
         return info
 
 
     def _send_command(self, code=0, is_ping=False, response_expected=True, parameters=None):
 
         if self.host is None:
-            raise RuntimeError("The Crow host must be defined in order to send admin commands.")
+            raise RuntimeError("The host must be defined in order to send admin commands.")
 
         if is_ping:
             payload = b''
@@ -119,7 +129,7 @@ class CrowAdmin():
             else:
                 return None
 
-        # Any non-ping response should consist of at least three bytes: 0x43, 0x41, and the status code
+        # Any non-ping response must have an initial three byte header identical to the commands: 0x43, 0x41, and command code
 
         if len(response) < 3:
             raise CrowAdminError("The response was too short -- less than three bytes.")
@@ -127,17 +137,10 @@ class CrowAdmin():
         if response[0] != 0x43 or response[1] != 0x41:
             raise CrowAdminError("The response did not have the correct initial identifying bytes.")
 
-        if response[2] == 0x00:
-            # status code 0 -> OK, so return the response to caller for final processing
-            return response
+        if response[2] != code:
+            raise CrowAdminError("The response does not include the correct command code.")
 
-        # non-zero status code means this is an admin error response
-        if response[2] == 1:
-            raise CrowAdminError("The device reports that the command is not available.")
-        elif response[2] == 2:
-            raise CrowAdminError("The device reports that the command had missing parameters.")
-        else:
-            raise CrowAdminError("The device returned an unrecognized error status (" + str(response[2]) + ").")
-
+        # initial header OK, so return to caller for final processing
+        return response
         
 
