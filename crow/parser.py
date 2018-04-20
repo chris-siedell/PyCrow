@@ -1,7 +1,8 @@
-# Crow v2 Response Parser
-# April 2018 - in active development
+# Crow Response Parser
+# Version 0.2.0 (alpha/experimental)
+# 19 April 2018
 # Chris Siedell
-# http://siedell.com/projects/Crow/
+# https://github.com/chris-siedell/PyCrow
 
 
 class Parser:
@@ -31,16 +32,18 @@ class Parser:
 
     def parse_data(self, data, token=None, reset=False):
 
+        # todo: make parser aware of possible loopback
+
         # The token argument can be used to inform the parser that it should
         # look for a specific response. If token is defined then the parser will
         # return as soon as it receives a response with that token. It will set
         # min_bytes_expected to 0, and if there are any bytes in data after the
         # response they will be returned as 'leftover' bytes. 
 
-        # returns list of dictionaries which all have a type property:
+        # This method returns a list of dictionaries which all have a type property:
         #  type: 'error' - a response packet was received, but it could not be parsed
-        #        'extra' - extraneous data
-        #        'response' - a correctly formatted response
+        #        'extra' - extraneous data, not recognized as part of a response packet
+        #        'response' - a parsable response
         #        'leftover' - data following an expected (specific token) response
         # error properties:
         #  token (int)
@@ -52,14 +55,14 @@ class Parser:
         # response properties:
         #  is_error (bool)
         #  token (int)
-        #  payload (bytes)
+        #  response (bytes)
 
         # states (action to be performed on next byte):
         #  0 - buffer RH0
         #  1 - buffer RH1
         #  2 - buffer RH2
         #  3 - buffer RH3
-        #  4 - buffer RH4 and evaluate
+        #  4 - buffer RH4 and evaluate RH0-RH4
         #  5 - process response payload byte
         #  6 - process response payload F16 upper sum
         #  7 - process response payload F16 lower sum
@@ -72,13 +75,13 @@ class Parser:
 
         extra_data = bytearray()
 
-        dataInd = 0
-        dataSize = len(data)
+        data_ind = 0
+        data_size = len(data)
 
-        while dataInd < dataSize:
+        while data_ind < data_size:
 
-            byte = data[dataInd]
-            dataInd += 1
+            byte = data[data_ind]
+            data_ind += 1
 
             if self._state == 5:
                 # process payload byte
@@ -107,12 +110,12 @@ class Parser:
                     # lower F16 correct
                     if self._payloadRemaining == 0:
                         # packet done -- all bytes received
-                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'payload':self._payload[0:self._payload_size]})
+                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'response':self._payload[0:self._payload_size]})
                         self.min_bytes_expected = 5
                         self._state = 0
                         if token is not None and token == self._token:
-                            if dataInd < dataSize:
-                                result.append({'type':'leftover', 'data':data[dataInd:dataSize]})
+                            if data_ind < data_size:
+                                result.append({'type':'leftover', 'data':data[data_ind:data_size]})
                             self.min_bytes_expected = 0
                             return result
                     else:
@@ -169,16 +172,16 @@ class Parser:
                         self._state = 5
                     else:
                         # packet is good, but empty (no payload)
-                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'payload':bytearray()})
+                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'response':bytearray()})
                         self.min_bytes_expected = 5
                         self._state = 0
                         if token is not None and token == self._token:
-                            if dataInd < dataSize:
-                                result.append({'type':'leftover', 'data':data[dataInd:dataSize]})
+                            if data_ind < data_size:
+                                result.append({'type':'leftover', 'data':data[data_ind:data_size]})
                             self.min_bytes_expected = 0
                             return result
                 else:
-                    # bad header
+                    # invalid header
                     # stay at state 4 but shift header bytes down and collect extraneous data
                     self.min_bytes_expected = 1
                     extra_data.append(self._header.pop(0))
@@ -191,12 +194,12 @@ class Parser:
                     self.min_bytes_expected = 5
                     self._state == 0
                     if token is not None and token == self._token:
-                        if dataInd < dataSize:
-                            result.append({'type':'leftover', 'data':data[dataInd:dataSize]})
+                        if data_ind < data_size:
+                            result.append({'type':'leftover', 'data':data[data_ind:data_size]})
                         self.min_bytes_expected = 0
                         return result
             else:
-                raise RuntimeError("Invalid state in Parser.")
+                raise RuntimeError("Programming error. Invalid state in Parser.")
 
         if len(extra_data) > 0:
             result.append({'type':'extra', 'data':extra_data})
@@ -205,7 +208,7 @@ class Parser:
 
 
 def response_header_is_valid(header):
-    # Given a bytes-like object of len >= 5 this method returns a bool.
+    # Given a bytes-like object of len >= 5 (not checked) this method returns a bool.
     if header[0] & 0x47 != 0x02:
         # bad reserved bits in RH0
         return False
