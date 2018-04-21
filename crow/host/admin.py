@@ -1,13 +1,12 @@
 # CrowAdmin Client
-# Version 0.2.0 (alpha/experimental)
-# 19 April 2018
+# 20 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
 
 
 import time
-from crow.utils import extract_ascii
-from crow.errors import ClientError
+import crow.utils
+import crow.host.errors
 
 
 class CrowAdmin():
@@ -55,23 +54,20 @@ class CrowAdmin():
         # A helper method for sending CrowAdmin commands.
         # Returns a params dictionary suitable for the ca_parse_* methods.
         # data, if not None, is appended to the command payload after the third byte.
-        params = {}
-        params['address'] = self.address
-        params['port'] = self.port
-        params['command_code'] = command_code
         if command_code is not None:
             # not ping
-            params['command'] = bytearray(b'\x43\x41') + command_code.to_bytes(1, 'big')
+            command = bytearray(b'\x43\x41') + command_code.to_bytes(1, 'big')
             if data is not None:
-                params['command'] += data
+                command += data
         else:
             # ping
-            params['command'] = None
-        params['response'] = self.host.send_command(address=self.address, port=self.port, payload=params['command'], response_expected=response_expected, propcr_order=self.propcr_order)
-        return params
+            command = None
+        t = self.host.send_command(address=self.address, port=self.port, payload=command, response_expected=response_expected, propcr_order=self.propcr_order)
+        t.command_code = command_code
+        return t
 
 
-class CrowAdminError(ClientError):
+class CrowAdminError(crow.host.errors.ClientError):
     def __init__(self, address, port, message, command_code):
         super().__init__(address, port, message)
         self.command_code = command_code
@@ -91,25 +87,25 @@ class CrowAdminError(ClientError):
 # On failure, these functions will raise CrowAdminError.
 
 def ca_parse_raise_error(params, message):
-    raise CrowAdminError(params['address'], params['port'], message, params['command_code'])
+    raise CrowAdminError(params.address, params.port, message, params.command_code)
 
 def ca_parse_ping(params):
     # Returns nothing. The ping response should be empty.
-    if len(params['response']) > 0:
+    if len(params.response) > 0:
         ca_parse_raise_error(params, "The ping response was not empty.")
 
 def ca_parse_header(params):
     # Returns nothing -- it simply validates the initial header (the first three bytes). Not applicable to ping.
     # The first two bytes are the protocol identifying bytes 0x43 and 0x41 (ascii "CA" for "CrowAdmin").
     # The third byte is a repeat of the command code.
-    rsp = params['response']
+    rsp = params.response
     if len(rsp) == 0:
         ca_parse_raise_error(params, "The response is empty. At least three bytes are required.")
     if len(rsp) < 3:
         ca_parse_raise_error(params, "The response has less than three bytes.")
     if rsp[0] != 0x43 or rsp[1] != 0x41:
         ca_parse_raise_error(params, "The response does not have the correct identifying bytes.")
-    if rsp[2] != params['command_code']:
+    if rsp[2] != params.command_code:
         ca_parse_raise_error(params, "The response does not include the correct command code.")
 
 def ca_parse_echo(params):
@@ -118,8 +114,8 @@ def ca_parse_echo(params):
     #  should be identical to the command header, but doing so provides more a
     #  more granular error message.
     ca_parse_header(params)
-    cmd = params['command']
-    rsp = params['response']
+    cmd = params.command
+    rsp = params.response
     if len(rsp) < len(cmd):
         ca_parse_raise_error(params, "The echo response has too few bytes.")
     elif len(rsp) > len(cmd):
@@ -131,7 +127,7 @@ def ca_parse_echo(params):
 def ca_parse_get_device_info(params):
     # Returns a dictionary with device information.
     ca_parse_header(params)
-    rsp = params['response']
+    rsp = params.response
     if len(rsp) < 9:
         ca_parse_raise_error(params, "The get_device_info response has less than nine bytes.")
     info = {}
@@ -142,18 +138,18 @@ def ca_parse_get_device_info(params):
     if len(rsp) == 9:
         return info
     details = rsp[9]
-    params['arg_index'] = 10
+    params.arg_index = 10
     try:
-        # extract_ascii will raise RuntimeError on failure
+        # unpack_ascii will raise RuntimeError on failure
         rsp_name = 'get_device_info'
         if details & 1:
-            extract_ascii(info, params, 3, 'impl_identifier', rsp_name)
+            crow.utils.unpack_ascii(info, params, 3, 'impl_identifier', rsp_name)
         if details & 2:
-            extract_ascii(info, params, 3, 'impl_description', rsp_name)
+            crow.utils.unpack_ascii(info, params, 3, 'impl_description', rsp_name)
         if details & 4:
-            extract_ascii(info, params, 3, 'device_identifier', rsp_name)
+            crow.utils.unpack_ascii(info, params, 3, 'device_identifier', rsp_name)
         if details & 8:
-            extract_ascii(info, params, 3, 'device_description', rsp_name)
+            crow.utils.unpack_ascii(info, params, 3, 'device_description', rsp_name)
     except RuntimeError as e:
         ca_parse_raise_error(params, str(e))
     return info
@@ -162,7 +158,7 @@ def ca_parse_get_device_info(params):
 def ca_parse_get_open_ports(params):
     # Returns a list of open port numbers.
     ca_parse_header(params)
-    rsp = params['response']
+    rsp = params.response
     if len(rsp) < 4:
         ca_parse_raise_error(params, "The get_open_ports response has less than four bytes.")
     ports = []
@@ -180,20 +176,20 @@ def ca_parse_get_open_ports(params):
 
 def ca_parse_get_port_info(params):
     ca_parse_header(params)
-    rsp = params['response']
+    rsp = params.response
     if len(rsp) < 4:
         ca_parse_raise_error(params, "The get_port_info response has less than four bytes.")
     details = rsp[3]
-    params['arg_index'] = 4
+    params.arg_index = 4
     info = {}
     info['is_open'] = bool(details & 1)
     try:
-        # extract_ascii will raise RuntimeError on failure
+        # unpack_ascii will raise RuntimeError on failure
         rsp_name = 'get_port_info'
         if details & 2:
-            extract_ascii(info, params, 3, 'service_identifier', rsp_name)
+            crow.utils.unpack_ascii(info, params, 3, 'service_identifier', rsp_name)
         if details & 4:
-            extract_ascii(info, params, 3, 'service_description', rsp_name)
+            crow.utils.unpack_ascii(info, params, 3, 'service_description', rsp_name)
     except RuntimeError as e:
         ca_parse_raise_error(params, str(e))
     return info

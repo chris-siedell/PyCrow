@@ -1,0 +1,11 @@
+
+Service Identifier      Default Port        Description
+Test_Echo               16                  echoes command payload as response payload
+Test_ErrorEcho          17                  same as echo, but with error flag set
+
+maybe...
+Test_BadToken                            sends a response with incorrect token
+Test_CorruptHeader                       sends a response with a corrupt header
+Test_CorruptBody                         sends a response with a corrupt body
+Test_IncorrectSize                       sends a response with a valid payload of incorrect size
+

@@ -1,6 +1,5 @@
 # Crow Errors
-# Version 0.2.0 (alpha/experimental)
-# 19 April 2018
+# 20 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
 
@@ -219,7 +218,7 @@ class ClientError(LocalError):
         return "Client error. " + super().extra_str()
 
 # NoResponseError is raised by the host from send_command when it fails to
-# receive an expected response.
+# receive a parseable, expected response.
 class NoResponseError(HostError):
     def __init__(self, address, port, num_bytes, message=None):
         self.num_bytes = num_bytes

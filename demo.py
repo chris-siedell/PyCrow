@@ -2,27 +2,31 @@
 # April 2018
 # Chris Siedell
 
-# The following assumes a peekpoke server at address 6, user port 0xafaf,
-# and an echoing server at address 5, user port 100. Both servers are assumed
-# to use PropCR. See "demo.spin".
+# The following assumes an echoing server at address 5, user port 100, using
+#  propcr byte ordering. See "demo.spin".
 
 import time
 import serial
 import sys
-from crow import host
-import crow.errors
-from crow.admin import CrowAdmin
+
+import crow.host.errors
+from crow.host.host import Host
+from crow.host.admin import CrowAdmin
 
 if len(sys.argv) < 2:
     sys.exit("Please provide serial port name as command line argument.")
-    
-s = serial.Serial(sys.argv[1])
-s.baudrate = 115200
 
-host = host.Host()
-host.serial = s
+port = sys.argv[1]
+
+#s = serial.Serial(sys.argv[1])
+#s.baudrate = 115200
+
+host = Host(port)
 
 print("\nCrow Host v2 Demonstration")
+print(" port: " + str(port))
+
+s = host.serial
 
 a = CrowAdmin()
 a.host = host
@@ -71,23 +75,23 @@ print("port 7: " + str(info))
 # echo
 print("\nWill send 0xdeadbeefabcdef01 to an echo server at address 5, port 100...")
 test = b'\xde\xad\xbe\xef\xab\xcd\xef\x01'
-payload = host.send_command(address=5, payload=test, port=100, propcr_order=True)
+payload = host.send_command(address=5, payload=test, port=100, propcr_order=True).response
 print("payload: " + str(payload))
 
 # max packet
 print("\nWill send max sized packet (expect OversizedCommandError)...")
 max_payload = bytearray(2047)
 try:
-    payload = host.send_command(address=5, payload=max_payload, port=100, propcr_order=True)
+    host.send_command(address=5, payload=max_payload, port=100, propcr_order=True)
     raise RuntimeError("Expected sending a max sized packet to raise OversizedCommandError.")
-except crow.errors.OversizedCommandError as e:
+except crow.host.errors.OversizedCommandError as e:
     print("OversizedCommandError caught")
     print(str(e))
 
 # ping again
 print("\nWill send empty command to address 5, port 0 (ping, expect empty response)...")
 start = time.perf_counter()
-payload = host.send_command(address=5, port=0)
+payload = host.send_command(address=5, port=0).response
 end = time.perf_counter()
 print("payload: " + str(payload))
 print("time: " + str(end-start))
@@ -95,7 +99,7 @@ print("time: " + str(end-start))
 # broadcast ping (shouldn't see any response)
 print("\nWill ping address 0 (no response expected)...")
 start = time.perf_counter()
-payload = host.send_command(address=0, port=0, response_expected=False)
+payload = host.send_command(address=0, port=0, response_expected=False).response
 end = time.perf_counter()
 print("payload: " + str(payload))
 print("time: " + str(end-start))
@@ -106,7 +110,7 @@ if len(data) > 0:
 
 # no response command
 print("\nWill send payload to 5:100 with response_expected == False...")
-payload = host.send_command(address=5, payload=b'Please do not respond.', port=100, response_expected=False, propcr_order=True)
+payload = host.send_command(address=5, payload=b'Please do not respond.', port=100, response_expected=False, propcr_order=True).response
 print("payload: " + str(payload))
 s.timeout = 0.25
 data = s.read(1)
@@ -116,7 +120,7 @@ if len(data) > 0:
 # ping again
 print("\nWill ping address 5...")
 start = time.perf_counter()
-payload = host.send_command(address=5, port=0)
+payload = host.send_command(address=5, port=0).response
 end = time.perf_counter()
 print("payload: " + str(payload))
 print("time: " + str(end-start))
@@ -124,44 +128,44 @@ print("time: " + str(end-start))
 # wrong address
 print("\nWill send 'is anyone there?' to 20:100 (expect NoResponseError)...")
 try:
-    payload = host.send_command(address=20, payload=b'is anyone there?', port=100, propcr_order=True)
+    host.send_command(address=20, payload=b'is anyone there?', port=100, propcr_order=True)
     raise RuntimeError("Expected send_command to raise NoResponseError.")
-except crow.errors.NoResponseError as e:
+except crow.host.errors.NoResponseError as e:
     print("Caught NoResponseError")
     print(str(e))
 
 # wrong port
 print("\nWill send 'port should be closed' to 5:101 (expect PortNotOpenError)...")
 try:
-    payload = host.send_command(address=5, payload=b'port should be closed', port=101, propcr_order=True)
+    host.send_command(address=5, payload=b'port should be closed', port=101, propcr_order=True)
     raise RuntimeError("Expected send_command to raise PortNotOpenError.")
-except crow.errors.PortNotOpenError as e:
+except crow.host.errors.PortNotOpenError as e:
     print("Caught PortNotOpenError")
     print(str(e))
 
 # admin echo
 print("\nWill send raw echo admin command...")
 echo = b'\x43\x41\x00Hello there! echo echo echo'
-payload = host.send_command(address=5, payload=echo, port=0, propcr_order=True)
+payload = host.send_command(address=5, payload=echo, port=0, propcr_order=True).response
 print("payload: " + str(payload))
 
 # admin getDeviceInfo
 print("\nWill send raw getDeviceInfo admin command...")
 getDeviceInfo = b'\x43\x41\x01'
-payload = host.send_command(address=5, payload=getDeviceInfo, port=0, propcr_order=True)
+payload = host.send_command(address=5, payload=getDeviceInfo, port=0, propcr_order=True).response
 print("payload: " + str(payload))
 
 # non-admin command to admin port (expect UnknownProtocolError)
 print("\nWill send non-admin command to admin port...")
 try:
-    payload = host.send_command(address=5, payload=b'gooblygook', port=0, propcr_order=True)
+    host.send_command(address=5, payload=b'gooblygook', port=0, propcr_order=True)
     raise RuntimeError("Expected send_command to raise UnknownCommandFormatError.")
-except crow.errors.UnknownCommandFormatError as e:
+except crow.host.errors.UnknownCommandFormatError as e:
     print("Caught UnknownCommandFormat")
     print(str(e))
 
 # final echo
 print("\nWill send 'goodbye!' to 5:100...")
-payload = host.send_command(address=5, payload=b'goodbye!', port=100, propcr_order=True)
+payload = host.send_command(address=5, payload=b'goodbye!', port=100, propcr_order=True).response
 print("payload: " + str(payload))
 

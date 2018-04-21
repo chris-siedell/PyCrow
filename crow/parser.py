@@ -1,5 +1,4 @@
-# Crow Response Parser
-# Version 0.2.0 (alpha/experimental)
+# Crow Packet Parser
 # 19 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
@@ -10,21 +9,21 @@ class Parser:
     def __init__(self):
 
         # Minimum number of bytes still expected by parser to complete the transaction.
+        #  This will always be non-zero unless a specific token is passed to parse_data.
         self.min_bytes_expected = 5
 
         # internal stuff
-        self._payload_size = 0
+        self._state = 0
         self._is_error = False
         self._token = 0
-        self._payload = bytearray(2047)
-        self._state = 0
+        self._pay_buff = bytearray(2047)
+        self._pay_size = 0
         self._header = bytearray(5)
-        self._payloadIndex = 0
-        self._chunkRemaining = 0
-        self._payloadRemaining = 0
-        self._bodyRemaining = 0
-        self._upperF16  = 0
-        self._lowerF16 = 0
+        self._pay_ind = 0
+        self._chk_rem = 0
+        self._pay_rem = 0
+        self._upper_F16 = 0
+        self._lower_F16 = 0
 
     def reset(self):
         self._state = 0
@@ -32,7 +31,7 @@ class Parser:
 
     def parse_data(self, data, token=None, reset=False):
 
-        # todo: make parser aware of possible loopback
+        # todo: add command packet recognition to parser
 
         # The token argument can be used to inform the parser that it should
         # look for a specific response. If token is defined then the parser will
@@ -55,7 +54,7 @@ class Parser:
         # response properties:
         #  is_error (bool)
         #  token (int)
-        #  response (bytes)
+        #  payload (bytes)
 
         # states (action to be performed on next byte):
         #  0 - buffer RH0
@@ -86,18 +85,18 @@ class Parser:
             if self._state == 5:
                 # process payload byte
                 self.min_bytes_expected -= 1
-                self._lowerF16 += byte
-                self._upperF16 += self._lowerF16
-                self._payload[self._payloadIndex] = byte
-                self._payloadIndex += 1
-                self._chunkRemaining -= 1
-                if self._chunkRemaining == 0:
+                self._lower_F16 += byte
+                self._upper_F16 += self._lower_F16
+                self._pay_buff[self._pay_ind] = byte
+                self._pay_ind += 1
+                self._chk_rem -= 1
+                if self._chk_rem == 0:
                     # all chunk payload bytes received
                     self._state = 6
             elif self._state == 6:
                 # process payload F16 upper sum
                 self.min_bytes_expected -= 1
-                if self._upperF16%0xff == byte%0xff:
+                if self._upper_F16%0xff == byte%0xff:
                     # upper F16 correct
                     self._state = 7
                 else:
@@ -106,11 +105,11 @@ class Parser:
             elif self._state == 7:
                 # process payload F16 lower sum
                 self.min_bytes_expected -= 1
-                if self._lowerF16%0xff == byte%0xff:
+                if self._lower_F16%0xff == byte%0xff:
                     # lower F16 correct
-                    if self._payloadRemaining == 0:
+                    if self._pay_rem == 0:
                         # packet done -- all bytes received
-                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'response':self._payload[0:self._payload_size]})
+                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'payload':self._pay_buff[0:self._pay_size]})
                         self.min_bytes_expected = 5
                         self._state = 0
                         if token is not None and token == self._token:
@@ -120,9 +119,9 @@ class Parser:
                             return result
                     else:
                         # more payload bytes will arrive in another chunk
-                        self._chunkRemaining = min(self._payloadRemaining, 128)
-                        self._payloadRemaining -= self._chunkRemaining
-                        self._upperF16 = self._lowerF16 = 0
+                        self._chk_rem = min(self._pay_rem, 128)
+                        self._pay_rem -= self._chk_rem
+                        self._upper_F16 = self._lower_F16 = 0
                         self._state = 5
                 else:
                     # bad payload F16 lower sum
@@ -159,20 +158,21 @@ class Parser:
                     # extract packet parameters
                     self._is_error = bool(self._header[0] & 0x80)
                     self._header[0] = (self._header[0] & 0x38) >> 3
-                    self._payload_size = int.from_bytes(self._header[0:2], 'big')
+                    self._pay_size = int.from_bytes(self._header[0:2], 'big')
                     self._token = self._header[2]
-                    if self._payload_size > 0:
+                    if self._pay_size > 0:
                         # prepare for first chunk of payload
-                        remainder = self._payload_size%128
-                        self.min_bytes_expected = (self._payload_size//128)*130 + ((remainder + 2) if (remainder > 0) else 0)
-                        self._chunkRemaining = min(self._payload_size, 128)
-                        self._payloadRemaining = self._payload_size - self._chunkRemaining
-                        self._upperF16 = self._lowerF16 = 0
-                        self._payloadIndex = 0
+                        remainder = self._pay_size%128
+                        self.min_bytes_expected = (self._pay_size//128)*130 + ((remainder + 2) if (remainder > 0) else 0)
+                        self._pay_rem = self._pay_size
+                        self._chk_rem = min(self._pay_rem, 128)
+                        self._pay_rem -= self._chk_rem
+                        self._upper_F16 = self._lower_F16 = 0
+                        self._pay_ind = 0
                         self._state = 5
                     else:
                         # packet is good, but empty (no payload)
-                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'response':bytearray()})
+                        result.append({'type':'response', 'is_error':self._is_error, 'token':self._token, 'payload':bytearray()})
                         self.min_bytes_expected = 5
                         self._state = 0
                         if token is not None and token == self._token:
@@ -208,7 +208,7 @@ class Parser:
 
 
 def response_header_is_valid(header):
-    # Given a bytes-like object of len >= 5 (not checked) this method returns a bool.
+    # Given a bytes-like object of len >= 5 (not checked) this function returns a bool.
     if header[0] & 0x47 != 0x02:
         # bad reserved bits in RH0
         return False
