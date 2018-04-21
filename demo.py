@@ -9,23 +9,19 @@ import time
 import serial
 import sys
 
-import crow.host.errors
-from crow.host.host import Host
-from crow.host.admin import CrowAdmin
+import crow.errors
+from crow.host import Host
+from crow.admin import CrowAdmin
 
 if len(sys.argv) < 2:
     sys.exit("Please provide serial port name as command line argument.")
 
 port = sys.argv[1]
 
-#s = serial.Serial(sys.argv[1])
-#s.baudrate = 115200
-
-host = Host(port)
-
 print("\nCrow Host v2 Demonstration")
 print(" port: " + str(port))
 
+host = Host(port)
 s = host.serial
 
 a = CrowAdmin()
@@ -84,7 +80,7 @@ max_payload = bytearray(2047)
 try:
     host.send_command(address=5, payload=max_payload, port=100, propcr_order=True)
     raise RuntimeError("Expected sending a max sized packet to raise OversizedCommandError.")
-except crow.host.errors.OversizedCommandError as e:
+except crow.errors.OversizedCommandError as e:
     print("OversizedCommandError caught")
     print(str(e))
 
@@ -130,7 +126,7 @@ print("\nWill send 'is anyone there?' to 20:100 (expect NoResponseError)...")
 try:
     host.send_command(address=20, payload=b'is anyone there?', port=100, propcr_order=True)
     raise RuntimeError("Expected send_command to raise NoResponseError.")
-except crow.host.errors.NoResponseError as e:
+except crow.errors.NoResponseError as e:
     print("Caught NoResponseError")
     print(str(e))
 
@@ -139,7 +135,7 @@ print("\nWill send 'port should be closed' to 5:101 (expect PortNotOpenError)...
 try:
     host.send_command(address=5, payload=b'port should be closed', port=101, propcr_order=True)
     raise RuntimeError("Expected send_command to raise PortNotOpenError.")
-except crow.host.errors.PortNotOpenError as e:
+except crow.errors.PortNotOpenError as e:
     print("Caught PortNotOpenError")
     print(str(e))
 
@@ -160,7 +156,7 @@ print("\nWill send non-admin command to admin port...")
 try:
     host.send_command(address=5, payload=b'gooblygook', port=0, propcr_order=True)
     raise RuntimeError("Expected send_command to raise UnknownCommandFormatError.")
-except crow.host.errors.UnknownCommandFormatError as e:
+except crow.errors.UnknownCommandFormatError as e:
     print("Caught UnknownCommandFormat")
     print(str(e))
 

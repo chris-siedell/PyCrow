@@ -1,10 +1,15 @@
 # Crow Packet Parser
-# 19 April 2018
+# 21 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
 
 
 class Parser:
+
+    # As of April 2018 this parser just looks for response packets.
+    # todo list:
+    #   - add support for command packets
+    #   - add ignore_extra and ignore_leftover options to parse_data
 
     def __init__(self):
 
@@ -31,15 +36,26 @@ class Parser:
 
     def parse_data(self, data, token=None, reset=False):
 
-        # todo: add command packet recognition to parser
+        # This method parses a data stream in search of Crow response packets. The
+        #  data stream is provided using the data argument (a bytes-like object),
+        #  potentially over several calls to parse_data. In other words, data does not
+        #  need to contain a complete packet since the parser stores information as it
+        #  is given and remembers its state between calls. The optional reset argument
+        #  can be used to reset the parser's state.
+        
+        # The parser's min_bytes_expected property tells the user how much more data
+        #  the parser needs (at minimum) in order to receive a complete response packet.
+        #  It will always be non-zero unless the token argument is used.
 
         # The token argument can be used to inform the parser that it should
-        # look for a specific response. If token is defined then the parser will
-        # return as soon as it receives a response with that token. It will set
-        # min_bytes_expected to 0, and if there are any bytes in data after the
-        # response they will be returned as 'leftover' bytes. 
+        #  look for a specific response. If token is defined then the parser will
+        #  return as soon as it receives a response with that token. It will set
+        #  min_bytes_expected to 0, and if there are any bytes in data after the
+        #  response they will be returned as 'leftover' bytes. 
 
-        # This method returns a list of dictionaries which all have a type property:
+        # This method returns a list of parser results. A result describes a sequence of
+        #  data given to the parser, potentially over several parse_data calls. Each
+        #  result is a dictionary with a type property. The result types:
         #  type: 'error' - a response packet was received, but it could not be parsed
         #        'extra' - extraneous data, not recognized as part of a response packet
         #        'response' - a parsable response

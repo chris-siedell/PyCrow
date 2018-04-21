@@ -1,12 +1,12 @@
 # CrowAdmin Client
-# 20 April 2018
+# 21 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
 
 
 import time
 import crow.utils
-import crow.host.errors
+import crow.errors
 
 
 class CrowAdmin():
@@ -67,7 +67,7 @@ class CrowAdmin():
         return t
 
 
-class CrowAdminError(crow.host.errors.ClientError):
+class CrowAdminError(crow.errors.ClientError):
     def __init__(self, address, port, message, command_code):
         super().__init__(address, port, message)
         self.command_code = command_code

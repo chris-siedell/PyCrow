@@ -1,8 +1,9 @@
 # Crow Utilities
-# 20 April 2018
+# 21 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
 
+# todo: revisit the errors raised by unpack functions
 
 def unpack_int(info, transaction, num_bytes, prop_name, rsp_name, byteorder='big', signed=False):
     # Will raise RuntimeError if the value can not be extracted.
@@ -59,8 +60,8 @@ def unpack_ascii(info, transaction, num_arg_bytes, prop_name, rsp_name):
 
 
 def fletcher16(data):
-    # adapted from PropCRInternal.cpp (2 April 2018)
-    # overflow not a problem if called on short chunks of data (128 bytes or less)
+    # Adapted from PropCRInternal.cpp (2 April 2018).
+    # Overflow not a problem if called on short chunks of data (128 bytes is fine).
     lower = 0
     upper = 0
     for d in data:
@@ -72,8 +73,8 @@ def fletcher16(data):
 
 
 def fletcher16_checkbytes(data):
-    # adapted from PropCRInternal.cpp (2 April 2018)
-    # overflow not a problem if called on short chunks of data (128 bytes or less)
+    # Adapted from PropCRInternal.cpp (2 April 2018).
+    # Overflow not a problem if called on short chunks of data (128 bytes is fine).
     lower = 0
     upper = 0
     for d in data:
