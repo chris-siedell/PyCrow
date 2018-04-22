@@ -12,65 +12,6 @@ import crow.transaction
 import crow.errors
 
 
-class SerialSettings():
-    # SerialSettings stores settings used by Crow hosts and clients.
-    # Values of None indicate that defaults should be used.
-    def __init__(self):
-        self.baudrate = None
-        self.transaction_timeout = None
-
-
-class SerialPort():
-    # SerialPort represents a serial port used by a Crow host. It maintains a reference
-    #  to a serial.Serial instance and stores the settings for all 32 Crow addresses
-    #  associated with the serial port.
-    # The serial.Serial instance associated with the serial port is intended to be read-only,
-    #  and it is assumed that its port property is constant.
-    # SerialPort objects should be created only in the static methods of the Host class.
-    # Host is designed so that only one SerialPort object is created for each port name,
-    #  regardless of how many hosts are using that port.
-
-    def __del__(self):
-        print("SerialPort.__del__")
-        print("  self: " + str(self))
-        
-    def __init__(self, serial_port_name):
-        print("SerialPort.__init__")
-        print("  serial_port_name: " + serial_port_name)
-        self.retain_count = 1
-        self._serial = serial.Serial(serial_port_name)
-        self._settings = []
-        for i in range(0, 32):
-            self._settings.append(SerialSettings());
-        self.default_transaction_timeout = 0.25
-        self.default_baudrate = 115200
-
-    def __repr__(self):
-        return "<{0} instance at {1:#x}, name: '{2}', retain count: {3}>".format(self.__class__.__name__, id(self), self._serial.port, self.retain_count)
-
-    @property
-    def serial(self):
-        return self._serial
-
-    @property
-    def name(self):
-        return self._serial.port
-
-    def get_transaction_timeout(self, address):
-        value = self._settings[address].transaction_timeout
-        if value is not None:
-            return value
-        else:
-            return self.default_transaction_timeout
-
-    def get_baudrate(self, address):
-        value = self._settings[address].baudrate
-        if value is not None:
-            return value
-        else:
-            return self.default_baudrate
-
-
 class Host:
 
     # A Host object is the intermediary used by a Client object to send
@@ -81,71 +22,24 @@ class Host:
     #  underlying serial.Serial instance per serial port, regardless of how
     #  many hosts are using that serial port.
 
-    # _serial_ports maintains references to all SerialPort instances in use
-    #  by hosts. _serial_ports is managed by static methods on Host, and
-    #  only those methods should use this set or create SerialPort instances.
-    #  The static methods use a retain_count property on each SerialPort
-    #  instance so that the instance can be removed from the set when
-    #  the serial port is no longer used by any host.
-
-    _serial_ports = set()
-
-    @staticmethod
-    def _retain_serial_port_by_name(serial_port_name):
-        print("_retain_serial_port_by_name")
-        print("  serial_port_name: "+serial_port_name)
-        for sp in Host._serial_ports:
-            if sp.name == serial_port_name:
-                # A SerialPort instance with that port name exists, so use it.
-                print("  serial port already exits")
-                print("  sp: " + str(sp))
-                sp.retain_count += 1
-                return sp
-        print("  serial port does not exist, will create")
-        # There is no SerialPort instance with that port name, so create one.
-        sp = SerialPort(serial_port_name) # retain_count is 1 at creation
-        Host._serial_ports.add(sp)
-        print("  sp: "+str(sp))
-        return sp
-
-    @staticmethod
-    def _release_serial_port(sp):
-        print("_release_serial_port")
-        sp.retain_count -= 1
-        print("  sp (after release): "+str(sp))
-        if sp.retain_count == 0:
-            # No hosts are using the serial port, so remove it from the set.
-            print("  retain count reached zero, will remove")
-            Host._serial_ports.remove(sp)
-
     def __del__(self):
-        print("Host.__del__")
-        print("  ref: " + str(self))
-        print("  serial_port: " + str(self._serial_port))
         Host._release_serial_port(self._serial_port)
 
     def __init__(self, serial_port_name):
-        print("Host.__init__")
-        print("  ref: " + str(self))
         self._serial_port = Host._retain_serial_port_by_name(serial_port_name)
-        print("  serial_port: " + str(self._serial_port))
         self._next_token = 0
         self._parser = crow.parser.Parser()
 
     @property
     def serial_port_name(self):
-        print("serial_port_name getter")
         return self._serial_port.name
 
     @serial_port_name.setter
     def serial_port_name(self, serial_port_name):
-        print("serial_port_name setter")
         # Release old instance after retaining new one in case they refer to the
         #  same object (prevents unnecessary deletion and creation).
         old_sp = self._serial_port
         self._serial_port = Host._retain_serial_port_by_name(serial_port_name)
-        print("  new serial_port: " + str(self._serial_port))
-        print("  old serial_port: " + str(old_sp))
         Host._release_serial_port(old_sp)
 
     # Although the host exposes the underlying serial.Serial instance, user
@@ -157,8 +51,6 @@ class Host:
     #  behavior since they violate assumptions made in the Host's internals.
     @property
     def serial(self):
-        print("serial getter")
-        print("  serial_port: " + str(self._serial_port))
         return self._serial_port.serial
 
     def send_command(self, address=1, port=32, payload=None, response_expected=True, propcr_order=False):
@@ -259,10 +151,95 @@ class Host:
             raise crow.errors.NoResponseError(address, port, byte_count)
 
 
-def raise_remote_error(transaction):
+    # _serial_ports maintains references to all SerialPort instances in use
+    #  by hosts. _serial_ports is managed by the _retain*/_release* static
+    #  methods of Host, and only those methods should use this set or create
+    #  SerialPort instances.
+    # The static methods use the retain_count property on each SerialPort
+    #  instance so that it can be removed from the set when the serial port
+    #  is no longer used by any host. (On creation the value of retain_count
+    #  is None.)
+    _serial_ports = set()
 
-    # Remote errors are those that are raised by the device by
-    #  sending an error response.
+    @staticmethod
+    def _retain_serial_port_by_name(serial_port_name):
+        for sp in Host._serial_ports:
+            if sp.name == serial_port_name:
+                # A SerialPort instance with that name exists, so use it.
+                sp.retain_count += 1
+                return sp
+        # There is no SerialPort instance with that name, so create one.
+        sp = SerialPort(serial_port_name) # retain_count is None at creation
+        Host._serial_ports.add(sp)
+        sp.retain_count = 1
+        return sp
+
+    @staticmethod
+    def _release_serial_port(sp):
+        sp.retain_count -= 1
+        if sp.retain_count == 0:
+            # No hosts are using the serial port, so remove it from the set.
+            Host._serial_ports.remove(sp)
+
+
+class SerialPort():
+    # SerialPort represents a serial port used by a Crow host. It maintains a reference
+    #  to a serial.Serial instance and stores the settings for all 32 Crow addresses
+    #  associated with the serial port.
+    # SerialPort objects are intended to be used internally by the Host class. Outside code
+    #  should not create or use these objects.
+    # The serial.Serial instance associated with the serial port is intended to be read-only,
+    #  and it is assumed that its port property is constant.
+    # Host is designed so that only one SerialPort object is created for each port name,
+    #  regardless of how many hosts are using that port.
+
+    def __init__(self, serial_port_name):
+        self.retain_count = None
+        self._serial = serial.Serial(serial_port_name)
+        self._settings = []
+        for i in range(0, 32):
+            self._settings.append(SerialSettings());
+        self.default_transaction_timeout = 0.25
+        self.default_baudrate = 115200
+
+    def __repr__(self):
+        return "<{0} instance at {1:#x}, name='{2}', retain_count={3}>".format(self.__class__.__name__, id(self), self._serial.port, self.retain_count)
+
+    @property
+    def serial(self):
+        return self._serial
+
+    @property
+    def name(self):
+        return self._serial.port
+
+    def get_transaction_timeout(self, address):
+        value = self._settings[address].transaction_timeout
+        if value is not None:
+            return value
+        else:
+            return self.default_transaction_timeout
+
+    def get_baudrate(self, address):
+        value = self._settings[address].baudrate
+        if value is not None:
+            return value
+        else:
+            return self.default_baudrate
+
+
+class SerialSettings():
+    # SerialSettings stores settings used by Crow hosts and clients.
+    # Values of None indicate that defaults should be used.
+    def __init__(self):
+        self.baudrate = None
+        self.transaction_timeout = None
+
+
+def raise_remote_error(transaction):
+    # A helper function for raising errors that were detected by the
+    #  device. These errors arrive as error responses, which this
+    #  function parses.
 
     address = transaction.address
     port = transaction.port
