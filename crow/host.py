@@ -37,6 +37,7 @@ class SerialPort():
     def __init__(self, serial_port_name):
         print("SerialPort.__init__")
         print("  serial_port_name: " + serial_port_name)
+        self.retain_count = 1
         self._serial = serial.Serial(serial_port_name)
         self._settings = []
         for i in range(0, 32):
@@ -45,7 +46,7 @@ class SerialPort():
         self.default_baudrate = 115200
 
     def __repr__(self):
-        return "<" + self.__class__.__name__ + " instance for '" + self._serial.port + "' at " + "{0:#x}>".format(id(self))
+        return "<{0} instance at {1:#x}, name: '{2}', retain count: {3}>".format(self.__class__.__name__, id(self), self._serial.port, self.retain_count)
 
     @property
     def serial(self):
@@ -83,7 +84,7 @@ class Host:
     # _serial_ports maintains references to all SerialPort instances in use
     #  by hosts. _serial_ports is managed by static methods on Host, and
     #  only those methods should use this set or create SerialPort instances.
-    #  The static methods add a retain_count property to each SerialPort
+    #  The static methods use a retain_count property on each SerialPort
     #  instance so that the instance can be removed from the set when
     #  the serial port is no longer used by any host.
 
@@ -102,17 +103,16 @@ class Host:
                 return sp
         print("  serial port does not exist, will create")
         # There is no SerialPort instance with that port name, so create one.
-        sp = SerialPort(serial_port_name)
+        sp = SerialPort(serial_port_name) # retain_count is 1 at creation
         Host._serial_ports.add(sp)
-        sp.retain_count = 1
         print("  sp: "+str(sp))
         return sp
 
     @staticmethod
     def _release_serial_port(sp):
         print("_release_serial_port")
-        print("  sp: "+str(sp))
         sp.retain_count -= 1
+        print("  sp (after release): "+str(sp))
         if sp.retain_count == 0:
             # No hosts are using the serial port, so remove it from the set.
             print("  retain count reached zero, will remove")
