@@ -16,18 +16,16 @@ from crow.admin import CrowAdmin
 if len(sys.argv) < 2:
     sys.exit("Please provide serial port name as command line argument.")
 
-port = sys.argv[1]
+port_name = sys.argv[1]
 
 print("\nCrow Host v2 Demonstration")
-print(" port: " + str(port))
+print(" port: " + str(port_name))
 
-host = Host(port)
-s = host.serial
+a = CrowAdmin(port_name, default_address=5)
+Host.set_propcr_order(port_name, 5, True)
 
-a = CrowAdmin()
-a.host = host
-a.address = 5
-a.propcr_order = True
+host = a.host
+s = host.serial_port.serial
 
 # ping
 print("\nSending ping command...")
@@ -71,14 +69,14 @@ print("port 7: " + str(info))
 # echo
 print("\nWill send 0xdeadbeefabcdef01 to an echo server at address 5, port 100...")
 test = b'\xde\xad\xbe\xef\xab\xcd\xef\x01'
-payload = host.send_command(address=5, payload=test, port=100, propcr_order=True).response
+payload = host.send_command(address=5, payload=test, port=100).response
 print("payload: " + str(payload))
 
 # max packet
 print("\nWill send max sized packet (expect OversizedCommandError)...")
 max_payload = bytearray(2047)
 try:
-    host.send_command(address=5, payload=max_payload, port=100, propcr_order=True)
+    host.send_command(address=5, payload=max_payload, port=100)
     raise RuntimeError("Expected sending a max sized packet to raise OversizedCommandError.")
 except crow.errors.OversizedCommandError as e:
     print("OversizedCommandError caught")
@@ -106,7 +104,7 @@ if len(data) > 0:
 
 # no response command
 print("\nWill send payload to 5:100 with response_expected == False...")
-payload = host.send_command(address=5, payload=b'Please do not respond.', port=100, response_expected=False, propcr_order=True).response
+payload = host.send_command(address=5, payload=b'Please do not respond.', port=100, response_expected=False).response
 print("payload: " + str(payload))
 s.timeout = 0.25
 data = s.read(1)
@@ -124,7 +122,7 @@ print("time: " + str(end-start))
 # wrong address
 print("\nWill send 'is anyone there?' to 20:100 (expect NoResponseError)...")
 try:
-    host.send_command(address=20, payload=b'is anyone there?', port=100, propcr_order=True)
+    host.send_command(address=20, payload=b'is anyone there?', port=100)
     raise RuntimeError("Expected send_command to raise NoResponseError.")
 except crow.errors.NoResponseError as e:
     print("Caught NoResponseError")
@@ -133,7 +131,7 @@ except crow.errors.NoResponseError as e:
 # wrong port
 print("\nWill send 'port should be closed' to 5:101 (expect PortNotOpenError)...")
 try:
-    host.send_command(address=5, payload=b'port should be closed', port=101, propcr_order=True)
+    host.send_command(address=5, payload=b'port should be closed', port=101)
     raise RuntimeError("Expected send_command to raise PortNotOpenError.")
 except crow.errors.PortNotOpenError as e:
     print("Caught PortNotOpenError")
@@ -142,19 +140,19 @@ except crow.errors.PortNotOpenError as e:
 # admin echo
 print("\nWill send raw echo admin command...")
 echo = b'\x43\x41\x00Hello there! echo echo echo'
-payload = host.send_command(address=5, payload=echo, port=0, propcr_order=True).response
+payload = host.send_command(address=5, payload=echo, port=0).response
 print("payload: " + str(payload))
 
 # admin getDeviceInfo
 print("\nWill send raw getDeviceInfo admin command...")
 getDeviceInfo = b'\x43\x41\x01'
-payload = host.send_command(address=5, payload=getDeviceInfo, port=0, propcr_order=True).response
+payload = host.send_command(address=5, payload=getDeviceInfo, port=0).response
 print("payload: " + str(payload))
 
 # non-admin command to admin port (expect UnknownProtocolError)
 print("\nWill send non-admin command to admin port...")
 try:
-    host.send_command(address=5, payload=b'gooblygook', port=0, propcr_order=True)
+    host.send_command(address=5, payload=b'gooblygook', port=0)
     raise RuntimeError("Expected send_command to raise UnknownCommandFormatError.")
 except crow.errors.UnknownCommandFormatError as e:
     print("Caught UnknownCommandFormat")
@@ -162,6 +160,6 @@ except crow.errors.UnknownCommandFormatError as e:
 
 # final echo
 print("\nWill send 'goodbye!' to 5:100...")
-payload = host.send_command(address=5, payload=b'goodbye!', port=100, propcr_order=True).response
+payload = host.send_command(address=5, payload=b'goodbye!', port=100).response
 print("payload: " + str(payload))
 

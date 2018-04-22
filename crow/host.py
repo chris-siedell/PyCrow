@@ -1,5 +1,5 @@
 # Crow Host
-# 21 April 2018
+# 22 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
 
@@ -10,9 +10,11 @@ import crow.utils
 import crow.parser
 import crow.transaction
 import crow.errors
+import crow.host_serial
 
 
 class Host:
+
 
     # A Host object is the intermediary used by a Client object to send
     #  commands and receive responses over a serial port.
@@ -21,6 +23,10 @@ class Host:
     #  instances may use the same serial port. There will be only one
     #  underlying serial.Serial instance per serial port, regardless of how
     #  many hosts are using that serial port.
+    # The serial.Serial instance is wrapped by a HostSerialPort object, which
+    #  also stores the settings used by each address on that serial port.
+    # Changing the serial port (i.e. the HostSerialPort object) is done by
+    #  changing the serial_port_name property.
 
     def __del__(self):
         Host._release_serial_port(self._serial_port)
@@ -36,33 +42,27 @@ class Host:
 
     @serial_port_name.setter
     def serial_port_name(self, serial_port_name):
-        # Release old instance after retaining new one in case they refer to the
-        #  same object (prevents unnecessary deletion and creation).
+        # Release old instance after retaining new one in case they are the
+        #  same object to prevent unnecessary deletion and creation.
         old_sp = self._serial_port
         self._serial_port = Host._retain_serial_port_by_name(serial_port_name)
         Host._release_serial_port(old_sp)
 
-    # Although the host exposes the underlying serial.Serial instance, user
-    #  code should be careful about making changes to this object.
-    # Changing the baudrate and read timeout are safe, and will have no effect
-    #  on Crow clients. If the serial object is closed it must be reopened
-    #  before sending commands.
-    # The port property must not be changed -- changes will cause undefined
-    #  behavior since they violate assumptions made in the Host's internals.
     @property
-    def serial(self):
-        return self._serial_port.serial
+    def serial_port(self):
+        return self._serial_port
 
-    def send_command(self, address=1, port=32, payload=None, response_expected=True, propcr_order=False):
+    def send_command(self, address=1, port=32, payload=None, response_expected=True):
 
         # Returns a Transaction object if successful, or raises an exception.
         # The transaction object's response property will be None when response_expected==False,
         #  or a bytes-like object otherwise.
 
-        # Get the serial port settings.
         ser = self._serial_port.serial
-        transaction_timeout = self._serial_port.get_transaction_timeout(address)
+
         baudrate = self._serial_port.get_baudrate(address)
+        transaction_timeout = self._serial_port.get_transaction_timeout(address)
+        propcr_order = self._serial_port.get_propcr_order(address)
 
         ser.reset_input_buffer()
         ser.baudrate = baudrate
@@ -151,25 +151,23 @@ class Host:
             raise crow.errors.NoResponseError(address, port, byte_count)
 
 
-    # _serial_ports maintains references to all SerialPort instances in use
-    #  by hosts. _serial_ports is managed by the _retain*/_release* static
-    #  methods of Host, and only those methods should use this set or create
-    #  SerialPort instances.
-    # The static methods use the retain_count property on each SerialPort
-    #  instance so that it can be removed from the set when the serial port
-    #  is no longer used by any host. (On creation the value of retain_count
-    #  is None.)
+    # _serial_ports maintains references to all HostSerialPort instances in use
+    #  by hosts. _serial_ports is managed by the _retain*/_release* static methods
+    #  of Host, and only those methods should create HostSerialPort instances.
+    # The static methods use the retain_count property on each HostSerialPort
+    #  instance so that the instance can be removed from the set when the serial
+    #  port is no longer used by any host.
     _serial_ports = set()
 
     @staticmethod
     def _retain_serial_port_by_name(serial_port_name):
         for sp in Host._serial_ports:
             if sp.name == serial_port_name:
-                # A SerialPort instance with that name exists, so use it.
+                # A HostSerialPort instance with that name exists, so use it.
                 sp.retain_count += 1
                 return sp
-        # There is no SerialPort instance with that name, so create one.
-        sp = SerialPort(serial_port_name) # retain_count is None at creation
+        # There is no HostSerialPort instance with that name, so create one.
+        sp = crow.host_serial.HostSerialPort(serial_port_name, _magic_word="abracadabra")
         Host._serial_ports.add(sp)
         sp.retain_count = 1
         return sp
@@ -181,59 +179,30 @@ class Host:
             # No hosts are using the serial port, so remove it from the set.
             Host._serial_ports.remove(sp)
 
+    
+    @staticmethod
+    def set_baudrate(serial_port_name, address, baudrate):
+        for sp in Host._serial_ports:
+            if sp.name == serial_port_name:
+                sp.set_baudrate(address, baudrate)
+                return
+        raise RuntimeError("The serial port is not in use by any host.")
 
-class SerialPort():
-    # SerialPort represents a serial port used by a Crow host. It maintains a reference
-    #  to a serial.Serial instance and stores the settings for all 32 Crow addresses
-    #  associated with the serial port.
-    # SerialPort objects are intended to be used internally by the Host class. Outside code
-    #  should not create or use these objects.
-    # The serial.Serial instance associated with the serial port is intended to be read-only,
-    #  and it is assumed that its port property is constant.
-    # Host is designed so that only one SerialPort object is created for each port name,
-    #  regardless of how many hosts are using that port.
+    @staticmethod
+    def set_transaction_timeout(serial_port_name, address, transaction_timeout):
+        for sp in Host._serial_ports:
+            if sp.name == serial_port_name:
+                sp.set_transaction_timeout(address, transaction_timeout)
+                return
+        raise RuntimeError("The serial port is not in use by any host.")
 
-    def __init__(self, serial_port_name):
-        self.retain_count = None
-        self._serial = serial.Serial(serial_port_name)
-        self._settings = []
-        for i in range(0, 32):
-            self._settings.append(SerialSettings());
-        self.default_transaction_timeout = 0.25
-        self.default_baudrate = 115200
-
-    def __repr__(self):
-        return "<{0} instance at {1:#x}, name='{2}', retain_count={3}>".format(self.__class__.__name__, id(self), self._serial.port, self.retain_count)
-
-    @property
-    def serial(self):
-        return self._serial
-
-    @property
-    def name(self):
-        return self._serial.port
-
-    def get_transaction_timeout(self, address):
-        value = self._settings[address].transaction_timeout
-        if value is not None:
-            return value
-        else:
-            return self.default_transaction_timeout
-
-    def get_baudrate(self, address):
-        value = self._settings[address].baudrate
-        if value is not None:
-            return value
-        else:
-            return self.default_baudrate
-
-
-class SerialSettings():
-    # SerialSettings stores settings used by Crow hosts and clients.
-    # Values of None indicate that defaults should be used.
-    def __init__(self):
-        self.baudrate = None
-        self.transaction_timeout = None
+    @staticmethod
+    def set_propcr_order(serial_port_name, address, propcr_order):
+        for sp in Host._serial_ports:
+            if sp.name == serial_port_name:
+                sp.set_propcr_order(address, propcr_order)
+                return
+        raise RuntimeError("The serial port is not in use by any host.")
 
 
 def raise_remote_error(transaction):

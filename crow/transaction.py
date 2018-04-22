@@ -1,5 +1,5 @@
 # Crow Transaction Object
-# 20 April 2018
+# 22 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
 
@@ -9,8 +9,6 @@ import crow.utils
 
 class Transaction():
     """A class that holds information pertaining to a Crow transaction."""
-
-    # todo: add new_response
 
     def __init__(self):
 
