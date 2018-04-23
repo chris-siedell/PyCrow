@@ -1,7 +1,8 @@
-Install with pip: `pip install crow-serial`
-On PyPi: https://pypi.org/project/crow-serial/
+Status: *experimental*
 
-----
+Install with pip: `pip install crow-serial`
+
+On PyPi: https://pypi.org/project/crow-serial/
 
 This project contains a host implementation as well as a Crow admin client.
 
@@ -11,8 +12,6 @@ The Crow admin client can be used to send the commands `ping`, `echo`, `host_pre
 ----
 
 # Crow Serial Protocol
-
-Status: *experimental*
 
 The Crow protocol is designed to allow a PC to control several microcontrollers using a single
 serial line. The protocol itself has a simple half-duplex, command/response format with basic
