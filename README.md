@@ -13,10 +13,10 @@ it to a *service* running on that *device*. The service performs the command and
 depending on the circumstances.
 
 A *command* has the following properties:
-    - address: 1-31 for a specific device, or 0 to broadcast to all devices.
-    - port: 0-255, where open ports are registered to specific services.
-    - response expected: if true, the host will wait for a response; if false, the device must not respond.
-    - payload: 0-2047 bytes of binary data.
+- address: 1-31 for a specific device, or 0 to broadcast to all devices.
+- port: 0-255, where open ports are registered to specific services.
+- response expected: if true, the host will wait for a response; if false, the device must not respond.
+- payload: 0-2047 bytes of binary data.
 
 A *response* has just one property, the payload, which is also 0-2047 bytes of binary data.
 
