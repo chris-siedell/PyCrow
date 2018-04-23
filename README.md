@@ -1,15 +1,15 @@
 # Crow Serial Protocol
 
-*Status: experimental*
+Status: *experimental*
 
 The Crow protocol is designed to allow a PC to control several microcontrollers using a single
-serial line. The protocol itself is a simple half-duplex, command/response protocol with basic
+serial line. The protocol itself has a simple half-duplex, command/response format with basic
 error checking using Fletcher-16 checksums.
 
 In Crow, the top-level software that generates commands is called a *client*. The client runs on the *host*, and
-it passes the command to a *host implementation*. The host implementation packages the command
-and sends it over the serial line. A *device implementation* receives the command and then passes
-it to a *service* running on that *device*. The service performs the command and may send a response,
+it passes the command to a *host implementation*. The host implementation creates a command packet
+and sends it over the serial line. A *device implementation* receives the packet and then passes the command
+to a *service* running on that *device*. The service performs the command and may send a response,
 depending on the circumstances.
 
 A *command* has the following properties:
@@ -25,5 +25,5 @@ A *response* has just one property, the payload, which is also 0-2047 bytes of b
 This project contains a host implementation as well as a Crow admin client.
 
 The Crow admin client issues standard commands to a 'CrowAdmin' service running on a
-device. The commands are ping, echo, host_presence, get_device_info, get_open_ports, and get_port_info.
+device. The commands are `ping`, `echo`, `host_presence`, `get_device_info`, `get_open_ports`, and `get_port_info`.
 
