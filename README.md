@@ -24,6 +24,6 @@ A *response* has just one property, the payload, which is also 0-2047 bytes of b
 
 This project contains a host implementation as well as a Crow admin client.
 
-The Crow admin client issues standard commands to a 'CrowAdmin' service running on a
-device. The commands are `ping`, `echo`, `host_presence`, `get_device_info`, `get_open_ports`, and `get_port_info`.
+The Crow admin client can be used to send the commands `ping`, `echo`, `host_presence`,
+`get_device_info`, `get_open_ports`, and `get_port_info`.
 
