@@ -1,3 +1,15 @@
+Install with pip: `pip install crow-serial`
+On PyPi: https://pypi.org/project/crow-serial/
+
+----
+
+This project contains a host implementation as well as a Crow admin client.
+
+The Crow admin client can be used to send the commands `ping`, `echo`, `host_presence`,
+`get_device_info`, `get_open_ports`, and `get_port_info`.
+
+----
+
 # Crow Serial Protocol
 
 Status: *experimental*
@@ -19,11 +31,4 @@ A *command* has the following properties:
 - payload: 0-2047 bytes of binary data.
 
 A *response* has just one property, the payload, which is also 0-2047 bytes of binary data.
-
-----
-
-This project contains a host implementation as well as a Crow admin client.
-
-The Crow admin client can be used to send the commands `ping`, `echo`, `host_presence`,
-`get_device_info`, `get_open_ports`, and `get_port_info`.
 
