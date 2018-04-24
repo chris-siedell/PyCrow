@@ -1,10 +1,10 @@
 # Crow Errors
-# 20 April 2018
+# 23 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
 
 
-# CrowError, abstract base class for all Crow errors.
+# CrowError, base class for all Crow errors.
 class CrowError(Exception):
     def __init__(self, address, port):
         self.address = address
@@ -16,12 +16,12 @@ class CrowError(Exception):
 # Remote Errors
 
 # Remote errors originate at the device, either in the device implementation (DeviceError)
-# or in the service (ServiceError). They are raised by the host when it receives an error
-# response. All error responses begin with a one-byte number indicating the error (zero
-# is assigned if the error response is empty). The error response may contain additional
-# details, which will be provided in the details dictionary.
+#  or in the service (ServiceError). They are raised by the host when it receives an error
+#  response. All error responses begin with a one-byte number indicating the error (zero
+#  is assigned if the error response is empty). The error response may contain additional
+#  details, which will be provided in the details dictionary.
 
-# RemoteError, abstract base class for all Crow errors originating at the device.
+# RemoteError, base class for all Crow errors originating at the device.
 class RemoteError(CrowError):
     def __init__(self, address, port, number, details):
         super().__init__(address, port)
@@ -47,59 +47,53 @@ class ServiceError(RemoteError):
 
 # Standard Assigned Device Errors
 
-# Device errors numbered 0 to 31 have meanings assigned by the Crow standard.
-
-class UnspecifiedDeviceError(DeviceError):
-    def __init__(self, address, port, details):
-        super().__init__(address, port, 0, details)
-    def __str__(self):
-        return "The device experienced an unspecified error. " + super().extra_str()
+# Device errors numbered 2 to 31 have special meanings assigned by the Crow standard.
 
 class DeviceFaultError(DeviceError):
     def __init__(self, address, port, details):
-        super().__init__(address, port, 1, details)
+        super().__init__(address, port, 2, details)
     def __str__(self):
         return "An unexpected error occurred in the device's Crow implementation. " + super().extra_str()
 
 class ServiceFaultError(DeviceError):
     def __init__(self, address, port, details):
-        super().__init__(address, port, 2, details)
+        super().__init__(address, port, 3, details)
     def __str__(self):
         return "An unexpected error occurred in the device's service implementation. " + super().extra_str()
 
 class DeviceUnavailableError(DeviceError):
     def __init__(self, address, port, details):
-        super().__init__(address, port, 3, details)
+        super().__init__(address, port, 4, details)
     def __str__(self):
         return "The device is unavailable. " + super().extra_str()
 
 class DeviceIsBusyError(DeviceUnavailableError):
     def __init__(self, address, port, details):
-        super().__init__(address, port, 4, details)
+        super().__init__(address, port, 5, details)
     def __str__(self):
         return "The device is busy. " + super().extra_str()
 
 class OversizedCommandError(DeviceError):
     def __init__(self, address, port, details):
-        super().__init__(address, port, 5, details)
+        super().__init__(address, port, 6, details)
     def __str__(self):
         return "The command payload exceeded the device's capacity. " + super().extra_str()
 
 class CorruptCommandPayloadError(DeviceError):
     def __init__(self, address, port, details):
-        super().__init__(address, port, 6, details)
+        super().__init__(address, port, 7, details)
     def __str__(self):
         return "The command payload checksum test failed. " + super().extra_str()
 
 class PortNotOpenError(DeviceError):
     def __init__(self, address, port, details):
-        super().__init__(address, port, 7, details)
+        super().__init__(address, port, 8, details)
     def __str__(self):
         return "The port was not open. " + super().extra_str()
 
 class DeviceLowResourcesError(DeviceError):
     def __init__(self, address, port, details):
-        super().__init__(address, port, 8, details)
+        super().__init__(address, port, 9, details)
     def __str__(self):
         return "The device reports low resources. " + super().extra_str()
 
@@ -112,13 +106,7 @@ class UnknownDeviceError(DeviceError):
 
 # Standard Assigned Service Errors
 
-# Service errors numbered 64 to 127 have meanings assigned by the Crow standard.
-
-class UnspecifiedServiceError(ServiceError):
-    def __init__(self, address, port, details):
-        super().__init__(address, port, 64, details)
-    def __str__(self):
-        return "The service experienced an unspecified error. " + super().extra_str()
+# Service errors numbered 65 to 127 have meanings assigned by the Crow standard.
 
 class UnknownCommandFormatError(ServiceError):
     def __init__(self, address, port, details):
@@ -192,7 +180,7 @@ class UnknownServiceError(ServiceError):
 # Local errors originate at the host, either in the host implementation (HostError) or
 # in the client (ClientError).
 
-# LocalError, for errors originating at the host.
+# LocalError, base class for errors originating at the host.
 class LocalError(CrowError):
     def __init__(self, address, port, message=None):
         super().__init__(address, port)

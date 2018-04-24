@@ -1,27 +1,25 @@
 {
 ========================================
 Echo.spin
-19 April 2018
+23 April 2018
 Chris Siedell
 https://github.com/chris-siedell/PyCrow
 ========================================
 
-  This file is simply PropCR-BD.spin modified so that the custom service at the user
+  This file is simply PropCR.spin modified so that the custom service at the user
 port echoes the command payload in the response. It is used for testing PyCrow.
 
   Also, the service identifier has been set to "Test_Echo".
 
-  PropCR-BD.spin version 0.3.1, 19 April 2018.
+  PropCR.spin version 0.3.2, 23 April 2018.
 
 ----------------------------------------------------------------------------------------
 
   This file is intended to serve as a base for implementing a Crow service. By default
 it doesn't do anything except respond to standard Crow admin commands on port 0: ping,
 echo, hostPresence, getDeviceInfo, getOpenPorts, and getPortInfo.
- 
-  This version features break detection. If break detection is not required then
-PropCR (no '-BD') can be used. Break detection requires at least eight or nine extra
-registers (not counting the handler code itself).
+
+  This version does NOT have break detection. If break detection is required, use PropCR-BD. 
  
   See "PropCR User Guide.txt" for more details.
 
@@ -32,14 +30,10 @@ registers (not counting the handler code itself).
     setInterbyteTimeoutInBitPeriods(count) - MUST follow setBaudrate
     setRecoveryTimeInMS(milliseconds)
     setRecoveryTimeInBitPeriods(count)
-    setBreakThresholdInMS(milliseconds) - MUST be called if setRecoveryTime* is called
     setAddress(address)
     setPort(port)
 
   Setting the baudrate must come before setting the interbyte timeout or recovery time.
-
-  If the recovery time is set, then setBreakThresholdInMS must be called afterwards
-in order to recalculate the break multiple, regardless if the threshold has changed.
 
   Calling the set* methods has no effect on launched instances.
 
@@ -66,7 +60,6 @@ con
     cBaudrate                   = 115200        'the minimum supported bit period (clkfreq/baudrate) is 26 clocks
     cInterbyteTimeoutInMS       = 1
     cRecoveryTimeInBitPeriods   = 16            'recoveryTime should be greater than a byte period
-    cBreakThresholdInMS         = 150
     cAddress                    = 1             'must be 1-31
     cUserPort                   = 32            'must be a one-byte value other than 0, recommended to use 32+
     
@@ -78,16 +71,21 @@ con
     cStopBitDuration = ((10*cClkfreq) / cBaudrate) - 5*cBitPeriod0 - 4*cBitPeriod1 + 1
     cTimeout = (cClkfreq/1000) * cInterbyteTimeoutInMS
     cRecoveryTime = cBitPeriod0 * cRecoveryTimeInBitPeriods
-    cBreakMultiple = ((cClkfreq/1000) * cBreakThresholdInMS) / cRecoveryTime #> 1
     
     { Flags and Masks for packetInfo (which is CH2). }
     cRspExpectedFlag        = $80
     cAddressMask            = %0001_1111
     
-    { Crow error response numbers. }
-    cOversizedCommand           = 5
-    cPortNotOpen                = 7
-    cUnspecifiedServiceError    = 64
+    { Crow Error Response Numbers
+        Error numbers 0-63 should be used only by PropCR code (the device implementation). }
+    cOversizedCommand           = 6
+    cPortNotOpen                = 8
+
+    {   The following error constants may be used by the service (i.e. the user code), but these
+      are the only numbers in the range 64-127 that should be used -- the rest have been reserved
+      for future assignement.
+        The numbers 128-255 are available for custom assignment by the service code. }
+    cServiceError               = 64
     cUnknownCommandFormat       = 65
     cRequestTooLarge            = 66
     cServiceLowResources        = 67
@@ -103,7 +101,7 @@ con
         To save space, PropCR makes use of some special purpose registers. The following SPRs are used for
       variables and temporaries: sh-par, sh-cnt, sh-ina, sh-inb, outb, dirb, vcfg, and vscl.
         The "_SH" suffix is a reminder to always used the variable/temporary as a destination register.
-        PropCR uses the counter B module in RecoveryMode (when waiting for rx line idle or detecting breaks).
+        PropCR uses the counter B module in RecoveryMode (when waiting for rx line idle).
         PropCR never uses the counter A module or its registers -- it leaves it free for custom use.
         PropCR does not use the actual PAR register (only the shadow register), so it is free for custom use.
     }
@@ -154,9 +152,6 @@ pub setRecoveryTimeInMS(__milliseconds)
 pub setRecoveryTimeInBitPeriods(__count)
     recoveryTime := __count*bitPeriod0
 
-pub setBreakThresholdInMS(__milliseconds)
-    breakMultiple := (__milliseconds*(clkfreq/1000)) / recoveryTime #> 2
-
 pub setAddress(__address)
     _RxCheckAddress := (_RxCheckAddress & $ffff_ffe0) | (__address & $1f)
 
@@ -199,7 +194,7 @@ initShift                       mov         initShiftLimit-1, initShiftLimit-1-(
                                     device description in response to a getDeviceInfo admin command. Here we
                                     determine the 'N'. }
                                 cogid       _initTmp
-                                shl         _initTmp, #16
+                                shl         _initTmp, #24
                                 add         getDeviceInfoCogNum, _initTmp
 
                                 { Misc. }
@@ -232,7 +227,6 @@ startBitWait            long    cStartBitWait
 stopBitDuration         long    cStopBitDuration
 timeout                 long    cTimeout
 recoveryTime            long    cRecoveryTime
-breakMultiple           long    cBreakMultiple
 rxMask                  long    |< cRxPin           'rx pin also stored in rcvyLowCounterMode
 txMask                  long    |< cTxPin
 
@@ -333,11 +327,9 @@ _RxStartWait                    long    0-0                                     
 
                         { fall through to RecoveryMode for framing errors }
 
-{ RecoveryMode (jmp), with Break Detection 
+{ RecoveryMode (jmp)
     In recovery mode the implementation waits for the rx line to be idle for at least recoveryTime clocks, then
   it will jump to ReceiveCommand to wait for a command.
-    If the rx line is continuously low for at least breakMultiple*recoveryTime clocks then a break
-  condition is detected.
     RecoveryMode uses the counter B module to count the number of clocks that the rx line is low. It turns the
   counter module off before exiting since it consumes some extra power, but this is not required.
 }
@@ -345,29 +337,15 @@ RecoveryMode
                                 mov         ctrb, rcvyLowCounterMode                'start counter B module counting clocks the rx line is low
                                 mov         _rcvyWait, recoveryTime
                                 add         _rcvyWait, cnt
-                                mov         _rcvyPrevPhsb, phsb                     'first wait is always recoveryTime+1 counts, so _rcvyCountdown reset guaranteed
+                                mov         _rcvyPrevPhsb, phsb
 
 :loop                           waitcnt     _rcvyWait, recoveryTime
                                 mov         _rcvyCurrPhsb, phsb
                                 cmp         _rcvyPrevPhsb, _rcvyCurrPhsb    wz      'z=1 line is idle (was never low), so exit
                         if_z    mov         ctrb, #0                                'turn off counter B module
                         if_z    jmp         #ReceiveCommand
-                                mov         _rcvyTmp, _rcvyPrevPhsb                 '_rcvyTmp will be value of _rcvyCurrPhsb if line always low over interval
-                                add         _rcvyTmp, recoveryTime
-                                cmp         _rcvyTmp, _rcvyCurrPhsb         wz      'z=0 line high at some point during interval, or this is first pass through loop
-                        if_nz   mov         _rcvyCountdown, breakMultiple           'reset break detection countdown if line not continuously low
                                 mov         _rcvyPrevPhsb, _rcvyCurrPhsb
-                                djnz        _rcvyCountdown, #:loop                  'break is detected when _rcvyCountdown reaches zero
-                                mov         ctrb, #0                                'turn off counter B module
-
-                        { fall through to BreakHandler }
-
-{ BreakHandler 
-    This code is executed after the break is detected (it may still be ongoing).
-}
-BreakHandler
-                                waitpeq     rxMask, rxMask                          'wait for break to end
-                                jmp         #ReceiveCommand
+                                jmp         #:loop
 
 
 { RX Parsing Instructions, used by ReceiveCommand
@@ -540,7 +518,7 @@ _AdminOpenPortsList     if_nz   mov         Payload+1, #cUserPort               
 }
 AdminGetDeviceInfo
                                 mov         sendBufferPointer, #getDeviceInfoBuffer
-                                mov         payloadSize, #44
+                                mov         payloadSize, #41
                                 jmp         #SendResponseAndResetPointer
 
 
@@ -578,15 +556,15 @@ getDeviceInfoBuffer
 long $0201_4143         'initial header (0x43, 0x41, 0x01), crowVersion = 2
 long $0000_0002 | (cMaxPayloadSize & $0700) | ((cMaxPayloadSize & $ff) << 16) | ((cMaxPayloadSize & $0700) << 16) 'crowAdminVersion = 2; start of max payload sizes
 long $1000_0a00 | (cMaxPayloadSize & $ff)   'last byte of max payload sizes; payload includes implAsciiDesc and deviceAsciiDesc, implAsciiDesc has offset 16
-long $0e1e_000e         'implAsciiDesc has length 14; deviceAsciiDesc has offset 30 and length 14
+long $0e1b_000b         'implAsciiDesc has length 11; deviceAsciiDesc has offset 27 and length 14
 long $706f_7250         'implAsciiDesc = "Prop"
-long $422d_5243         '"CR-B"
-long $3076_2044         '"D v0"
-long $3850_332e         '".d"; deviceAsciiDesc = "P8"
-long $4132_3358         '"X32A"
-long $6f63_2820         '" (co"
+long $7620_5243         '"CR v"
+long $5033_2e30         '"0.3"; deviceAsciiDesc = "P"
+long $3233_5838         '"8X32"
+long $6328_2041         '"A (c"
 getDeviceInfoCogNum
-long $2930_2067         '"g N)" - initializing code adds cogID to third byte to get numeral
+long $3020_676f         '"og N" - initializing code adds cogID to fourth byte to get numeral
+long $0000_0029         '")"
 
 getPortInfoBuffer_Admin
 long $0303_4143         'initial header (0x43, 0x41, 0x03), port is open, serviceIdentifier included
@@ -861,14 +839,12 @@ _rxLeftovers    res
 
 tmp8v
 _initTmp
-_rcvyTmp
 _txRemaining
 _rxRemaining    res
 
 tmp9v
 _initCount
 _admTmp
-_rcvyCountdown
 _txCount
 _rxCountdown    res
 

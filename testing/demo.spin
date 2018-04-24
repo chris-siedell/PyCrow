@@ -21,13 +21,6 @@ pub main
     echo.setPort(100)
     echo.start
     
-    'peekpoke.setParams(31, 30, 230400, 6)
-    'peekpoke.new
 
-    'uncomment to turn on led on pin 27 (e.g. flip module)
-'    dira[27] := 1
-'    outa[27] := 1
-'    repeat
-'        waitcnt(0)
     
 

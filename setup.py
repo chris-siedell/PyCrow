@@ -7,14 +7,13 @@ from setuptools import setup, find_packages
 from codecs import open
 from os import path
 
-# Get the long description from the README file
 here = path.abspath(path.dirname(__file__))
-with open(path.join(here, 'README.md'), encoding='utf-8') as f:
+with open(path.join(here, 'long_description.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
     name='crow-serial',
-    version='0.2.1',
+    version='0.3.0',
     description='A Crow serial protocol implementation',
     long_description=long_description,
     long_description_content_type='text/markdown',

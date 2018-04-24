@@ -1,5 +1,5 @@
 # Crow Host
-# 22 April 2018
+# 23 April 2018
 # Chris Siedell
 # https://github.com/chris-siedell/PyCrow
 
@@ -214,9 +214,9 @@ def raise_remote_error(transaction):
     port = transaction.port
     response = transaction.response
 
-    # If the error response payload is empty we raise UnspecifiedDeviceError.
+    # If the payload is empty we raise RemoteError (implicit error number 0).
     if len(response) == 0:
-        raise crow.errors.UnspecifiedDeviceError(address, port, None)
+        raise crow.errors.RemoteError(address, port, 0, None)
 
     # The error number is in the first byte of the payload.
     number = response[0]
@@ -251,30 +251,30 @@ def raise_remote_error(transaction):
         except RuntimeError as e:
             raise crow.errors.HostError(address, port, str(e))
 
-    if number == 0:
-        raise crow.errors.UnspecifiedDeviceError(address, port, info)
-    elif number == 1:
-        raise crow.errors.DeviceFaultError(address, port, info)
+    if number == 1:
+        raise crow.errors.DeviceError(address, port, info)
     elif number == 2:
-        raise crow.errors.ServiceFaultError(address, port, info)
+        raise crow.errors.DeviceFaultError(address, port, info)
     elif number == 3:
-        raise crow.errors.DeviceUnavailableError(address, port, info)
+        raise crow.errors.ServiceFaultError(address, port, info)
     elif number == 4:
-        raise crow.errors.DeviceIsBusyError(address, port, info)
+        raise crow.errors.DeviceUnavailableError(address, port, info)
     elif number == 5:
-        raise crow.errors.OversizedCommandError(address, port, info)
+        raise crow.errors.DeviceIsBusyError(address, port, info)
     elif number == 6:
-        raise crow.errors.CorruptCommandPayloadError(address, port, info)
+        raise crow.errors.OversizedCommandError(address, port, info)
     elif number == 7:
-        raise crow.errors.PortNotOpenError(address, port, info)
+        raise crow.errors.CorruptCommandPayloadError(address, port, info)
     elif number == 8:
+        raise crow.errors.PortNotOpenError(address, port, info)
+    elif number == 9:
         raise crow.errors.DeviceLowResourcesError(address, port, info)
-    elif number >= 9 and number < 32:
+    elif number >= 10 and number < 32:
         raise crow.errors.UnknownDeviceError(address, port, number, info)
     elif number >= 32 and number < 64:
         raise crow.errors.DeviceError(address, port, number, info)
     elif number == 64:
-        raise crow.errors.UnspecifiedServiceError(address, port, info)
+        raise crow.errors.ServiceError(address, port, info)
     elif number == 65:
         raise crow.errors.UnknownCommandFormatError(address, port, info)
     elif number == 66:
