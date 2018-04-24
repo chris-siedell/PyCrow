@@ -13,8 +13,8 @@ with open(path.join(here, 'long_description.md'), encoding='utf-8') as f:
 
 setup(
     name='crow-serial',
-    version='0.3.0',
-    description='A Crow serial protocol implementation',
+    version='0.3.1',
+    description='A Crow serial protocol implementation.',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='http://siedell.com/projects/Crow',

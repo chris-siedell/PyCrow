@@ -213,13 +213,13 @@ def raise_remote_error(transaction):
     address = transaction.address
     port = transaction.port
     response = transaction.response
-
-    # If the payload is empty we raise RemoteError (implicit error number 0).
+    
     if len(response) == 0:
-        raise crow.errors.RemoteError(address, port, 0, None)
-
-    # The error number is in the first byte of the payload.
-    number = response[0]
+        # If the payload is empty we use an implicit number 0 (generic RemoteError).
+        number = 0
+    else:
+        # The error number is the first byte of the payload.
+        number = response[0]
 
     # rsp_name is used if there is an error parsing the error response
     rsp_name = "error number " + str(number)
@@ -251,8 +251,10 @@ def raise_remote_error(transaction):
         except RuntimeError as e:
             raise crow.errors.HostError(address, port, str(e))
 
-    if number == 1:
-        raise crow.errors.DeviceError(address, port, info)
+    if number == 0:
+        raise crow.errors.RemoteError(address, port, number, info)
+    elif number == 1:
+        raise crow.errors.DeviceError(address, port, number, info)
     elif number == 2:
         raise crow.errors.DeviceFaultError(address, port, info)
     elif number == 3:
@@ -274,7 +276,7 @@ def raise_remote_error(transaction):
     elif number >= 32 and number < 64:
         raise crow.errors.DeviceError(address, port, number, info)
     elif number == 64:
-        raise crow.errors.ServiceError(address, port, info)
+        raise crow.errors.ServiceError(address, port, number, info)
     elif number == 65:
         raise crow.errors.UnknownCommandFormatError(address, port, info)
     elif number == 66:
