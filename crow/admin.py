@@ -1,7 +1,8 @@
 # CrowAdmin Client
-# 22 April 2018
+# 24 April 2018
 # Chris Siedell
-# https://github.com/chris-siedell/PyCrow
+# project: https://pypi.org/project/crow-serial/
+# source: https://github.com/chris-siedell/PyCrow
 
 
 import time

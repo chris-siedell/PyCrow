@@ -1,7 +1,8 @@
 # Crow Errors
-# 23 April 2018
+# 24 April 2018
 # Chris Siedell
-# https://github.com/chris-siedell/PyCrow
+# project: https://pypi.org/project/crow-serial/
+# source: https://github.com/chris-siedell/PyCrow
 
 
 # CrowError, base class for all Crow errors.
@@ -178,7 +179,7 @@ class UnknownServiceError(ServiceError):
 # Local Errors
 
 # Local errors originate at the host, either in the host implementation (HostError) or
-# in the client (ClientError).
+#  in the client (ClientError).
 
 # LocalError, base class for errors originating at the host.
 class LocalError(CrowError):

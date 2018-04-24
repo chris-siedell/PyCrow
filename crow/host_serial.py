@@ -1,7 +1,8 @@
 # Crow Host Serial Port
-# 22 April 2018
+# 24 April 2018
 # Chris Siedell
-# https://github.com/chris-siedell/PyCrow
+# project: https://pypi.org/project/crow-serial/
+# source: https://github.com/chris-siedell/PyCrow
 
 
 import serial
@@ -13,11 +14,10 @@ class HostSerialPort():
     #  to a serial.Serial instance and manages the settings for all 32 Crow addresses
     #  associated with the serial port.
     # HostSerialPort objects are intended to be created internally by the Host class.
-    # The serial.Serial instance associated with the serial port is intended to be read-only,
-    #  and it is assumed that its port property is constant.
+    # The port property of the wrapped serial.Serial object should not change.
     # Host is designed so that only one SerialPort object is created for each port name,
     #  regardless of how many hosts are using that port. Settings changes made by one user
-    #  of the serial port (e.g. a client) will apply to all users.
+    #  to a serial port and address will apply to all users.
 
     # Using HostSerialPort.ALL as the address for the set_<serial setting> methods will cause
     #  the change to be applied to all addresses.

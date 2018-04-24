@@ -1,7 +1,8 @@
 # Crow Packet Parser
-# 21 April 2018
+# 24 April 2018
 # Chris Siedell
-# https://github.com/chris-siedell/PyCrow
+# project: https://pypi.org/project/crow-serial/
+# source: https://github.com/chris-siedell/PyCrow
 
 
 class Parser:

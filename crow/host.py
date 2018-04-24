@@ -1,7 +1,8 @@
 # Crow Host
-# 23 April 2018
+# 24 April 2018
 # Chris Siedell
-# https://github.com/chris-siedell/PyCrow
+# project: https://pypi.org/project/crow-serial/
+# source: https://github.com/chris-siedell/PyCrow
 
 
 import time
@@ -14,7 +15,6 @@ import crow.host_serial
 
 
 class Host:
-
 
     # A Host object is the intermediary used by a Client object to send
     #  commands and receive responses over a serial port.

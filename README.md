@@ -15,7 +15,7 @@ The Crow admin client can be used to send the commands `ping`, `echo`, `host_pre
 
 The Crow protocol is designed to allow a PC to control several microcontrollers using a single
 serial line. The protocol itself has a simple half-duplex, command/response format with basic
-error checking using Fletcher-16 checksums.
+error checking provided by Fletcher-16 checksums.
 
 In Crow, the top-level software that generates commands is called a *client*. The client runs on the *host*, and
 it passes the command to a *host implementation*. The host implementation creates a command packet
