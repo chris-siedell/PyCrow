@@ -109,6 +109,8 @@ class UnknownDeviceError(DeviceError):
 
 # Service errors numbered 65 to 127 have meanings assigned by the Crow standard.
 
+# todo: the child errors probably contain syntax errors re: number
+
 class UnknownCommandFormatError(ServiceError):
     def __init__(self, address, port, details):
         super().__init__(address, port, 65, details)

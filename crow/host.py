@@ -1,5 +1,5 @@
 # Crow Host
-# 24 April 2018
+# 30 April 2018
 # Chris Siedell
 # project: https://pypi.org/project/crow-serial/
 # source: https://github.com/chris-siedell/PyCrow
@@ -29,7 +29,8 @@ class Host:
     #  changing the serial_port_name property.
 
     def __del__(self):
-        Host._release_serial_port(self._serial_port)
+        if hasattr(self, '_serial_port'):
+            Host._release_serial_port(self._serial_port)
 
     def __init__(self, serial_port_name):
         self._serial_port = Host._retain_serial_port_by_name(serial_port_name)
@@ -201,6 +202,22 @@ class Host:
         for sp in Host._serial_ports:
             if sp.name == serial_port_name:
                 sp.set_propcr_order(address, propcr_order)
+                return
+        raise RuntimeError("The serial port is not in use by any host.")
+
+    @staticmethod
+    def open(serial_port_name):
+        for sp in Host._serial_ports:
+            if sp.name == serial_port_name:
+                sp.serial.open()
+                return
+        raise RuntimeError("The serial port is not in use by any host.")
+
+    @staticmethod
+    def close(serial_port_name):
+        for sp in Host._serial_ports:
+            if sp.name == serial_port_name:
+                sp.serial.close()
                 return
         raise RuntimeError("The serial port is not in use by any host.")
 
