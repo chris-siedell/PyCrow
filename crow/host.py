@@ -1,8 +1,10 @@
-# Crow Host
-# 30 April 2018
+# host.py
+# Crow Host Implementation
+# 2 May 2018
 # Chris Siedell
 # project: https://pypi.org/project/crow-serial/
 # source: https://github.com/chris-siedell/PyCrow
+# homepage: http://siedell.com/projects/Crow/
 
 
 import time
@@ -122,7 +124,7 @@ class Host:
                         t.response = item['payload']
                         if item['is_error']:
                             # error response
-                            raise_remote_error(t)
+                            self._raise_error(t)
                         else:
                             # normal response
                             return t
@@ -151,6 +153,105 @@ class Host:
             #  and the parser results
             raise crow.errors.NoResponseError(address, port, byte_count)
 
+
+    def _raise_error(self, transaction):
+    
+        address = transaction.address
+        port = transaction.port
+        response = transaction.response
+        
+        if len(response) == 0:
+            # If the payload is empty we use an implicit number 0 (generic RemoteError).
+            number = 0
+        else:
+            # The error number is the first byte of the payload.
+            number = response[0]
+    
+        # rsp_name is used if there is an error parsing the error response
+        rsp_name = "error number " + str(number)
+    
+        # info will hold any additional details included in the error
+        info = None
+    
+        # Optional byte E1 is a bitfield that specifies what additional details are included.
+        if len(response) >= 2:
+            info = {}
+            E1 = response[1]
+            transaction.arg_index = 2
+            try:
+                # The unpack_* functions will raise RuntimeError on parsing errors.
+                if E1 & 1:
+                    crow.utils.unpack_ascii(info, transaction, 4, 'message', rsp_name)
+                if E1 & 2:
+                    crow.utils.unpack_int(info, transaction, 1, 'crow_version', rsp_name)
+                if E1 & 4:
+                    crow.utils.unpack_int(info, transaction, 2, 'max_command_size', rsp_name)
+                if E1 & 8:
+                    crow.utils.unpack_int(info, transaction, 2, 'max_response_size', rsp_name)
+                if E1 & 16:
+                    crow.utils.unpack_int(info, transaction, 1, 'address', rsp_name)
+                if E1 & 32:
+                    crow.utils.unpack_int(info, transaction, 1, 'port', rsp_name)
+                if E1 & 64:
+                    crow.utils.unpack_ascii(info, transaction, 3, 'service_identifier', rsp_name)
+            except RuntimeError as e:
+                # If the RemoteError response can not be parsed it gets superceded by a HostError.
+                raise crow.errors.HostError(address, port, str(e))
+    
+        if number == 0:
+            raise crow.errors.RemoteError(address, port, number, info)
+        elif number == 1:
+            raise crow.errors.DeviceError(address, port, number, info)
+        elif number == 2:
+            raise crow.errors.DeviceFaultError(address, port, number, info)
+        elif number == 3:
+            raise crow.errors.ServiceFaultError(address, port, number, info)
+        elif number == 4:
+            raise crow.errors.DeviceUnavailableError(address, port, number, info)
+        elif number == 5:
+            raise crow.errors.DeviceIsBusyError(address, port, number, info)
+        elif number == 6:
+            raise crow.errors.OversizedCommandError(address, port, number, info)
+        elif number == 7:
+            raise crow.errors.CorruptCommandPayloadError(address, port, number, info)
+        elif number == 8:
+            raise crow.errors.PortNotOpenError(address, port, number, info)
+        elif number == 9:
+            raise crow.errors.DeviceLowResourcesError(address, port, number, info)
+        elif number >= 10 and number < 32:
+            raise crow.errors.UnknownDeviceError(address, port, number, info)
+        elif number >= 32 and number < 64:
+            raise crow.errors.DeviceError(address, port, number, info)
+        elif number == 64:
+            raise crow.errors.ServiceError(address, port, number, info)
+        elif number == 65:
+            raise crow.errors.UnknownCommandFormatError(address, port, number, info)
+        elif number == 66:
+            raise crow.errors.ServiceLowResourcesError(address, port, number, info)
+        elif number == 67:
+            raise crow.errors.InvalidCommandError(address, port, number, info)
+        elif number == 68:
+            raise crow.errors.RequestTooLargeError(address, port, number, info)
+        elif number == 69:
+            raise crow.errors.CommandNotAvailableError(address, port, number, info)
+        elif number == 70:
+            raise crow.errors.CommandNotImplementedError(address, port, number, info)
+        elif number == 71:
+            raise crow.errors.CommandNotAllowedError(address, port, number, info)
+        elif number == 72:
+            raise crow.errors.IncorrectCommandSizeError(address, port, number, info)
+        elif number == 73:
+            raise crow.errors.MissingCommandDataError(address, port, number, info)
+        elif number == 74:
+            raise crow.errors.TooMuchCommandDataError(address, port, number, info)
+        elif number >= 75 and number < 128:
+            raise crow.errors.UnknownServiceError(address, port, number, info)
+        elif number >= 128 and number < 256:
+            raise crow.errors.ServiceError(address, port, number, info)
+      
+        raise RuntimeError("Programming error. A remote error (number " + str(number) + ") was not handled.")
+    
+    
 
     # _serial_ports maintains references to all HostSerialPort instances in use
     #  by hosts. _serial_ports is managed by the _retain*/_release* static methods
@@ -220,106 +321,6 @@ class Host:
                 sp.serial.close()
                 return
         raise RuntimeError("The serial port is not in use by any host.")
-
-
-def raise_remote_error(transaction):
-    # A helper function for raising errors that were detected by the
-    #  device. These errors arrive as error responses, which this
-    #  function parses.
-
-    address = transaction.address
-    port = transaction.port
-    response = transaction.response
-    
-    if len(response) == 0:
-        # If the payload is empty we use an implicit number 0 (generic RemoteError).
-        number = 0
-    else:
-        # The error number is the first byte of the payload.
-        number = response[0]
-
-    # rsp_name is used if there is an error parsing the error response
-    rsp_name = "error number " + str(number)
-
-    # info will hold any additional details included in the error
-    info = None
-
-    # Optional byte E1 is a bitfield that specifies what additional details are included.
-    if len(response) >= 2:
-        info = {}
-        E1 = response[1]
-        transaction.arg_index = 2
-        try:
-            # The unpack_* functions will raise RuntimeError on parsing errors.
-            if E1 & 1:
-                crow.utils.unpack_ascii(info, transaction, 4, 'message', rsp_name)
-            if E1 & 2:
-                crow.utils.unpack_int(info, transaction, 1, 'crow_version', rsp_name)
-            if E1 & 4:
-                crow.utils.unpack_int(info, transaction, 2, 'max_command_size', rsp_name)
-            if E1 & 8:
-                crow.utils.unpack_int(info, transaction, 2, 'max_response_size', rsp_name)
-            if E1 & 16:
-                crow.utils.unpack_int(info, transaction, 1, 'address', rsp_name)
-            if E1 & 32:
-                crow.utils.unpack_int(info, transaction, 1, 'port', rsp_name)
-            if E1 & 64:
-                crow.utils.unpack_ascii(info, transaction, 3, 'service_identifier', rsp_name)
-        except RuntimeError as e:
-            raise crow.errors.HostError(address, port, str(e))
-
-    if number == 0:
-        raise crow.errors.RemoteError(address, port, number, info)
-    elif number == 1:
-        raise crow.errors.DeviceError(address, port, number, info)
-    elif number == 2:
-        raise crow.errors.DeviceFaultError(address, port, info)
-    elif number == 3:
-        raise crow.errors.ServiceFaultError(address, port, info)
-    elif number == 4:
-        raise crow.errors.DeviceUnavailableError(address, port, info)
-    elif number == 5:
-        raise crow.errors.DeviceIsBusyError(address, port, info)
-    elif number == 6:
-        raise crow.errors.OversizedCommandError(address, port, info)
-    elif number == 7:
-        raise crow.errors.CorruptCommandPayloadError(address, port, info)
-    elif number == 8:
-        raise crow.errors.PortNotOpenError(address, port, info)
-    elif number == 9:
-        raise crow.errors.DeviceLowResourcesError(address, port, info)
-    elif number >= 10 and number < 32:
-        raise crow.errors.UnknownDeviceError(address, port, number, info)
-    elif number >= 32 and number < 64:
-        raise crow.errors.DeviceError(address, port, number, info)
-    elif number == 64:
-        raise crow.errors.ServiceError(address, port, number, info)
-    elif number == 65:
-        raise crow.errors.UnknownCommandFormatError(address, port, info)
-    elif number == 66:
-        raise crow.errors.RequestTooLargeError(address, port, info)
-    elif number == 67:
-        raise crow.errors.ServiceLowResourcesError(address, port, info)
-    elif number == 68:
-        raise crow.errors.CommandNotAvailableError(address, port, info)
-    elif number == 69:
-        raise crow.errors.CommandNotImplementedError(address, port, info)
-    elif number == 70:
-        raise crow.errors.CommandNotAllowedError(address, port, info)
-    elif number == 71:
-        raise crow.errors.InvalidCommandError(address, port, info)
-    elif number == 72:
-        raise crow.errors.IncorrectCommandSizeError(address, port, info)
-    elif number == 73:
-        raise crow.errors.MissingCommandDataError(address, port, info)
-    elif number == 74:
-        raise crow.errors.TooMuchCommandDataError(address, port, info)
-    elif number >= 75 and number < 128:
-        raise crow.errors.UnknownServiceError(address, port, number, info)
-    elif number >= 128 and number < 255:
-        raise crow.errors.ServiceError(address, port, number, info)
-  
-    raise RuntimeError("Programming error. A remote error (number " + str(number) + ") was not handled.")
 
 
 
