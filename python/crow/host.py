@@ -38,6 +38,7 @@ class Host:
         self._serial_port = Host._retain_serial_port_by_name(serial_port_name)
         self._next_token = 0
         self._parser = crow.parser.Parser()
+        self.custom_service_error_callback = None
 
     @property
     def serial_port_name(self):
@@ -55,7 +56,9 @@ class Host:
     def serial_port(self):
         return self._serial_port
 
-    def send_command(self, address=1, port=32, payload=None, response_expected=True):
+    def send_command(self, address=1, port=32, payload=None, response_expected=True, context=None):
+        # context is an optional argument. It will be passed to the custom service error
+        #  callback if an error response with numbers 128-255 is received.
 
         # Returns a Transaction object if successful, or raises an exception.
         # The transaction object's response property will be None when response_expected==False,
@@ -124,7 +127,7 @@ class Host:
                         t.response = item['payload']
                         if item['is_error']:
                             # error response
-                            self._raise_error(t)
+                            self._raise_error(t, context)
                         else:
                             # normal response
                             return t
@@ -154,7 +157,8 @@ class Host:
             raise crow.errors.NoResponseError(address, port, byte_count)
 
 
-    def _raise_error(self, transaction):
+    def _raise_error(self, transaction, context):
+        # context passed to the custom service error callback, if applicable.
     
         address = transaction.address
         port = transaction.port
@@ -170,12 +174,11 @@ class Host:
         # rsp_name is used if there is an error parsing the error response
         rsp_name = "error number " + str(number)
     
-        # info will hold any additional details included in the error
-        info = None
+        # info will hold any additional details included in the error.
+        info = {}
     
         # Optional byte E1 is a bitfield that specifies what additional details are included.
         if len(response) >= 2:
-            info = {}
             E1 = response[1]
             transaction.arg_index = 2
             try:
@@ -247,10 +250,11 @@ class Host:
         elif number >= 75 and number < 128:
             raise crow.errors.UnknownServiceError(address, port, number, info)
         elif number >= 128 and number < 256:
+            if self.custom_service_error_callback is not None:
+                self.custom_service_error_callback(address, port, number, info, context)
             raise crow.errors.ServiceError(address, port, number, info)
       
         raise RuntimeError("Programming error. A remote error (number " + str(number) + ") was not handled.")
-    
     
 
     # _serial_ports maintains references to all HostSerialPort instances in use
