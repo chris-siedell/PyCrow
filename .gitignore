@@ -3,11 +3,12 @@
 .DS_Store
 *~
 *.binary
+*.dat
 
 */__pycache__/
 
 *.pyc
-/dist/
-/build/
-/*.egg-info
+*/dist/
+*/build/
+*/*.egg-info
 
