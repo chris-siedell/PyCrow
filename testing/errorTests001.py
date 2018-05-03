@@ -24,7 +24,7 @@ print(" Visual inspection required.\n")
 
 def raise_error():
     try:
-        host._raise_error(t)
+        host._raise_error(t, None)
         raise RuntimeError("No error thrown.")
     except crow.errors.DeviceFaultError as e:
         print(" caught DeviceFaultError")
